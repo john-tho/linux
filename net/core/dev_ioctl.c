@@ -154,6 +154,10 @@ static int dev_ifsioc_locked(struct net *net, struct ifreq *ifr, unsigned int cm
 		ifr->ifr_qlen = dev->tx_queue_len;
 		return 0;
 
+	case SIOCGDEVID:
+		ifr->ifr_ifru.ifru_ivalue = dev->devid;
+		return 0;
+		
 	default:
 		/* dev_ioctl() should ensure this case
 		 * is never reached
@@ -244,6 +248,23 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 	case SIOCSIFMTU:	/* Set the MTU of a device */
 		return dev_set_mtu(dev, ifr->ifr_mtu);
 
+	case SIOCSIFL2MTU:	/* Set the L2MTU of a device */
+		if (!netif_device_present(dev)) return -ENODEV;
+		if (!ops->ndo_change_l2mtu) return -EOPNOTSUPP;
+		err = ops->ndo_change_l2mtu(dev, ifr->ifr_mtu);
+		if (err) return err;
+		if (dev->flags & IFF_UP)
+			call_netdevice_notifiers(NETDEV_CHANGEL2MTU, dev);
+		return 0;
+
+	case SIOCSIFMPLSMTU:	/* Set the L2MTU of a device */
+		if (ifr->ifr_mtu == dev->mplsmtu) return 0;
+		if (!netif_device_present(dev)) return -ENODEV;
+		dev->mplsmtu = ifr->ifr_mtu;
+		if (dev->flags & IFF_UP)
+			call_netdevice_notifiers(NETDEV_CHANGEMPLSMTU, dev);
+		return 0;
+
 	case SIOCSIFHWADDR:
 		if (dev->addr_len > sizeof(struct sockaddr))
 			return -EINVAL;
@@ -286,6 +307,10 @@ static int dev_ifsioc(struct net *net, struct ifreq *ifr, unsigned int cmd)
 		if (ifr->ifr_qlen < 0)
 			return -EINVAL;
 		return dev_change_tx_queue_len(dev, ifr->ifr_qlen);
+
+	case SIOCSDEVID:
+		dev->devid = ifr->ifr_ifru.ifru_ivalue;
+		return 0;
 
 	case SIOCSIFNAME:
 		ifr->ifr_newname[IFNAMSIZ-1] = '\0';
@@ -411,6 +436,7 @@ int dev_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr, bool *need_c
 	case SIOCGIFMAP:
 	case SIOCGIFINDEX:
 	case SIOCGIFTXQLEN:
+	case SIOCGDEVID:
 		dev_load(net, ifr->ifr_name);
 		rcu_read_lock();
 		ret = dev_ifsioc_locked(net, ifr, cmd);
@@ -467,12 +493,15 @@ int dev_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr, bool *need_c
 	case SIOCSIFFLAGS:
 	case SIOCSIFMETRIC:
 	case SIOCSIFMTU:
+	case SIOCSIFL2MTU:
+	case SIOCSIFMPLSMTU:
 	case SIOCSIFHWADDR:
 	case SIOCSIFSLAVE:
 	case SIOCADDMULTI:
 	case SIOCDELMULTI:
 	case SIOCSIFHWBROADCAST:
 	case SIOCSMIIREG:
+	case SIOCSDEVID:
 	case SIOCBONDENSLAVE:
 	case SIOCBONDRELEASE:
 	case SIOCBONDSETHWADDR:

@@ -28,6 +28,8 @@
 #include <linux/of_device.h>
 #include <linux/wait.h>
 
+//#define dev_info(a, ...)	printk(__VA_ARGS__)
+
 #define UART_MR1			0x0000
 
 #define UART_MR1_AUTO_RFR_LEVEL0	0x3F
@@ -51,12 +53,27 @@
 #define UART_MR2_PARITY_MODE_SPACE	0x3
 #define UART_MR2_PARITY_MODE		0x3
 
-#define UART_CSR			0x0008
+static const unsigned msm_reg_map [][10] = {
+	{ 0x08, 0x08, 0x10, 0x14, 0x14, 0x38, 0x10, 0x38, 0x70, 0x70 },
+	{ 0xa4, 0xa0, 0xa8, 0xb4, 0xb0, 0xb8, 0xac, 0xbc, 0x140, 0x100}
+};
+static const unsigned *msm_reg_map_p = msm_reg_map[0];
+static unsigned skipClocks = 0;
+#define UART_SR		msm_reg_map_p[0]
+#define UART_CSR	msm_reg_map_p[1]
+#define UART_CR		msm_reg_map_p[2]
+#define UART_ISR	msm_reg_map_p[3]
+
+#define UART_IMR	msm_reg_map_p[4]
+#define UART_IRDA	msm_reg_map_p[5]
+#define UART_MISR	msm_reg_map_p[6]
+
+#define UARTDM_RX_TOTAL_SNAP	msm_reg_map_p[7]
+#define UARTDM_RF		msm_reg_map_p[8]
+#define UARTDM_TF		msm_reg_map_p[9]
 
 #define UART_TF				0x000C
-#define UARTDM_TF			0x0070
 
-#define UART_CR				0x0010
 #define UART_CR_CMD_NULL		(0 << 4)
 #define UART_CR_CMD_RESET_RX		(1 << 4)
 #define UART_CR_CMD_RESET_TX		(2 << 4)
@@ -81,7 +98,6 @@
 #define UART_CR_RX_ENABLE		BIT(0)
 #define UART_CR_CMD_RESET_RXBREAK_START	((1 << 11) | (2 << 4))
 
-#define UART_IMR			0x0014
 #define UART_IMR_TXLEV			BIT(0)
 #define UART_IMR_RXSTALE		BIT(3)
 #define UART_IMR_RXLEV			BIT(4)
@@ -103,14 +119,12 @@
 #define UART_NREG			0x002C
 #define UART_DREG			0x0030
 #define UART_MNDREG			0x0034
-#define UART_IRDA			0x0038
 #define UART_MISR_MODE			0x0040
 #define UART_MISR_RESET			0x0044
 #define UART_MISR_EXPORT		0x0048
 #define UART_MISR_VAL			0x004C
 #define UART_TEST_CTRL			0x0050
 
-#define UART_SR				0x0008
 #define UART_SR_HUNT_CHAR		BIT(7)
 #define UART_SR_RX_BREAK		BIT(6)
 #define UART_SR_PAR_FRAME_ERR		BIT(5)
@@ -121,9 +135,6 @@
 #define UART_SR_RX_READY		BIT(0)
 
 #define UART_RF				0x000C
-#define UARTDM_RF			0x0070
-#define UART_MISR			0x0010
-#define UART_ISR			0x0014
 #define UART_ISR_TX_READY		BIT(7)
 
 #define UARTDM_RXFS			0x50
@@ -142,7 +153,6 @@
 
 #define UARTDM_DMRX			0x34
 #define UARTDM_NCF_TX			0x40
-#define UARTDM_RX_TOTAL_SNAP		0x38
 
 #define UARTDM_BURST_SIZE		16   /* in bytes */
 #define UARTDM_TX_AIGN(x)		((x) & ~0x3) /* valid for > 1p3 */
@@ -155,6 +165,7 @@ enum {
 	UARTDM_1P3,
 	UARTDM_1P4,
 };
+
 
 struct msm_dma {
 	struct dma_chan		*chan;
@@ -1120,18 +1131,28 @@ static int msm_set_baud_rate(struct uart_port *port, unsigned int baud,
 	flags = *saved_flags;
 	spin_unlock_irqrestore(&port->lock, flags);
 
+	if (!skipClocks) {
 	entry = msm_find_best_baud(port, baud, &rate);
+		if (! IS_ERR(msm_port->clk)) {
 	clk_set_rate(msm_port->clk, rate);
+		}
 	baud = rate / 16 / entry->divisor;
+	}
 
 	spin_lock_irqsave(&port->lock, flags);
 	*saved_flags = flags;
 	port->uartclk = rate;
 
+	if (!skipClocks)
 	msm_write(port, entry->code, UART_CSR);
 
 	/* RX stale watermark */
+	if (!skipClocks) {
 	rxstale = entry->rxstale;
+	}
+	else {
+		rxstale = 31; // for 115200
+	}
 	watermark = UART_IPR_STALE_LSB & rxstale;
 	if (msm_port->is_uartdm) {
 		mask = UART_DM_IPR_STALE_TIMEOUT_MSB;
@@ -1174,6 +1195,11 @@ static int msm_set_baud_rate(struct uart_port *port, unsigned int baud,
 
 static void msm_init_clock(struct uart_port *port)
 {
+	if (skipClocks) {
+		printk("msm_serial: (!)clock already setup in booter\n");
+		return;
+	}
+
 	struct msm_port *msm_port = UART_TO_MSM(port);
 
 	clk_prepare_enable(msm_port->clk);
@@ -1405,6 +1431,11 @@ static int msm_verify_port(struct uart_port *port, struct serial_struct *ser)
 static void msm_power(struct uart_port *port, unsigned int state,
 		      unsigned int oldstate)
 {
+	if (skipClocks) {
+		dev_info(port->dev, "msm_power not supported\n");
+		return;
+	}
+
 	struct msm_port *msm_port = UART_TO_MSM(port);
 
 	switch (state) {
@@ -1736,7 +1767,7 @@ OF_EARLYCON_DECLARE(msm_serial_dm, "qcom,msm-uartdm",
 static struct uart_driver msm_uart_driver;
 
 static struct console msm_console = {
-	.name = "ttyMSM",
+	.name = "ttyS",
 	.write = msm_console_write,
 	.device = uart_console_device,
 	.setup = msm_console_setup,
@@ -1754,7 +1785,7 @@ static struct console msm_console = {
 static struct uart_driver msm_uart_driver = {
 	.owner = THIS_MODULE,
 	.driver_name = "msm_serial",
-	.dev_name = "ttyMSM",
+	.dev_name = "ttyS",
 	.nr = UART_NR,
 	.cons = MSM_CONSOLE,
 };
@@ -1800,18 +1831,26 @@ static int msm_serial_probe(struct platform_device *pdev)
 	else
 		msm_port->is_uartdm = 0;
 
+	skipClocks = of_property_read_bool(pdev->dev.of_node, "skip-clocks");
+
 	msm_port->clk = devm_clk_get(&pdev->dev, "core");
-	if (IS_ERR(msm_port->clk))
-		return PTR_ERR(msm_port->clk);
+	if (IS_ERR(msm_port->clk)) {
+		dev_info(&pdev->dev, "missing core clock\n");
+		if (!skipClocks) return PTR_ERR(msm_port->clk);
+	}
 
 	if (msm_port->is_uartdm) {
 		msm_port->pclk = devm_clk_get(&pdev->dev, "iface");
-		if (IS_ERR(msm_port->pclk))
-			return PTR_ERR(msm_port->pclk);
+		if (IS_ERR(msm_port->pclk)) {
+			dev_info(&pdev->dev, "missing iface clk\n");
+			if (!skipClocks) return PTR_ERR(msm_port->pclk);
+		}
 	}
 
+	if (!IS_ERR(msm_port->clk)) {
 	port->uartclk = clk_get_rate(msm_port->clk);
 	dev_info(&pdev->dev, "uartclk = %d\n", port->uartclk);
+	}
 
 	resource = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (unlikely(!resource))
@@ -1880,6 +1919,15 @@ static struct platform_driver msm_platform_driver = {
 static int __init msm_serial_init(void)
 {
 	int ret;
+
+	if (of_machine_is_compatible("qcom,mdm9607")) {
+		msm_reg_map_p = msm_reg_map[1];
+	}
+	if (of_machine_is_compatible("qcom,sdxprairie")
+		|| of_machine_is_compatible("qcom,sdx20"))
+	{
+		msm_reg_map_p = msm_reg_map[1];
+	}
 
 	ret = uart_register_driver(&msm_uart_driver);
 	if (unlikely(ret))

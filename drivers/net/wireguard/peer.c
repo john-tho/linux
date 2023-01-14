@@ -9,6 +9,9 @@
 #include "timers.h"
 #include "peerlookup.h"
 #include "noise.h"
+#include "logger.h"
+
+#include <uapi/linux/wireguard.h>
 
 #include <linux/kref.h>
 #include <linux/lockdep.h>
@@ -66,6 +69,7 @@ struct wg_peer *wg_peer_create(struct wg_device *wg,
 	wg_pubkey_hashtable_add(wg->peer_hashtable, peer);
 	++wg->num_peers;
 	pr_debug("%s: Peer %llu created\n", wg->dev->name, peer->internal_id);
+	wg_log(WGLOG_LEVEL_DEBUG, wg->dev, peer, "Peer created");
 	return peer;
 
 err_3:
@@ -213,6 +217,7 @@ static void kref_release(struct kref *refcount)
 	pr_debug("%s: Peer %llu (%pISpfsc) destroyed\n",
 		 peer->device->dev->name, peer->internal_id,
 		 &peer->endpoint.addr);
+	wg_log(WGLOG_LEVEL_DEBUG, peer->device->dev, peer, "Peer destroyed");
 
 	/* Remove ourself from dynamic runtime lookup structures, now that the
 	 * last reference is gone.

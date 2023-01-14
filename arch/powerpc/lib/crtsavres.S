@@ -39,6 +39,7 @@
  */
 
 #include <asm/ppc_asm.h>
+#include <asm/export.h>
 
 	.file	"crtsavres.S"
 
@@ -230,6 +231,43 @@ _GLOBAL(_rest32gpr_31_x)
 	mtlr	0
 	mr	1,11
 	blr
+
+EXPORT_SYMBOL(_restgpr_14_x)
+EXPORT_SYMBOL(_restgpr_15_x)
+EXPORT_SYMBOL(_restgpr_16_x)
+EXPORT_SYMBOL(_restgpr_17_x)
+EXPORT_SYMBOL(_restgpr_18_x)
+EXPORT_SYMBOL(_restgpr_19_x)
+EXPORT_SYMBOL(_restgpr_20_x)
+EXPORT_SYMBOL(_restgpr_21_x)
+EXPORT_SYMBOL(_restgpr_22_x)
+EXPORT_SYMBOL(_restgpr_23_x)
+EXPORT_SYMBOL(_restgpr_24_x)
+EXPORT_SYMBOL(_restgpr_25_x)
+EXPORT_SYMBOL(_restgpr_26_x)
+EXPORT_SYMBOL(_restgpr_27_x)
+EXPORT_SYMBOL(_restgpr_28_x)
+EXPORT_SYMBOL(_restgpr_29_x)
+EXPORT_SYMBOL(_restgpr_30_x)
+EXPORT_SYMBOL(_restgpr_31_x)
+EXPORT_SYMBOL(_rest32gpr_14_x)
+EXPORT_SYMBOL(_rest32gpr_15_x)
+EXPORT_SYMBOL(_rest32gpr_16_x)
+EXPORT_SYMBOL(_rest32gpr_17_x)
+EXPORT_SYMBOL(_rest32gpr_18_x)
+EXPORT_SYMBOL(_rest32gpr_19_x)
+EXPORT_SYMBOL(_rest32gpr_20_x)
+EXPORT_SYMBOL(_rest32gpr_21_x)
+EXPORT_SYMBOL(_rest32gpr_22_x)
+EXPORT_SYMBOL(_rest32gpr_23_x)
+EXPORT_SYMBOL(_rest32gpr_24_x)
+EXPORT_SYMBOL(_rest32gpr_25_x)
+EXPORT_SYMBOL(_rest32gpr_26_x)
+EXPORT_SYMBOL(_rest32gpr_27_x)
+EXPORT_SYMBOL(_rest32gpr_28_x)
+EXPORT_SYMBOL(_rest32gpr_29_x)
+EXPORT_SYMBOL(_rest32gpr_30_x)
+EXPORT_SYMBOL(_rest32gpr_31_x)
 
 #ifdef CONFIG_ALTIVEC
 /* Called with r0 pointing just beyond the end of the vector save area.  */

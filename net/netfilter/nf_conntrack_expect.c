@@ -286,6 +286,7 @@ struct nf_conntrack_expect *nf_ct_expect_alloc(struct nf_conn *me)
 	new = kmem_cache_alloc(nf_ct_expect_cachep, GFP_ATOMIC);
 	if (!new)
 		return NULL;
+	memset(&new->lnode, 0, sizeof(new->lnode));
 
 	new->master = me;
 	refcount_set(&new->use, 1);

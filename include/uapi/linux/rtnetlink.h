@@ -171,12 +171,22 @@ enum {
 	RTM_GETLINKPROP,
 #define RTM_GETLINKPROP	RTM_GETLINKPROP
 
+	RTM_NEWLIMIT = 109,
+#define RTM_NEWLIMIT RTM_NEWLIMIT
+	RTM_DELLIMIT = 110,
+#define RTM_DELLIMIT RTM_DELLIMIT
+	RTM_GETLIMIT = 111,
+#define RTM_GETLIMIT RTM_GETLIMIT
+
 	RTM_NEWVLAN = 112,
 #define RTM_NEWNVLAN	RTM_NEWVLAN
 	RTM_DELVLAN,
 #define RTM_DELVLAN	RTM_DELVLAN
 	RTM_GETVLAN,
 #define RTM_GETVLAN	RTM_GETVLAN
+
+        RTM_NEWIGMP,
+#define RTM_NEWIGMP	RTM_NEWIGMP
 
 	__RTM_MAX,
 #define RTM_MAX		(((__RTM_MAX + 3) & ~3) - 1)
@@ -366,6 +376,8 @@ enum rtattr_type_t {
 	RTA_SPORT,
 	RTA_DPORT,
 	RTA_NH_ID,
+	RTA_PW,
+	RTA_LIMIT,
 	__RTA_MAX
 };
 
@@ -398,6 +410,7 @@ struct rtnexthop {
 #define RTNH_F_OFFLOAD		8	/* offloaded route */
 #define RTNH_F_LINKDOWN		16	/* carrier-down on nexthop */
 #define RTNH_F_UNRESOLVED	32	/* The entry is unresolved (ipmr) */
+#define RTNH_F_NO_OFFLOAD	64
 
 #define RTNH_COMPARE_MASK	(RTNH_F_DEAD | RTNH_F_LINKDOWN | RTNH_F_OFFLOAD)
 
@@ -732,6 +745,8 @@ enum rtnetlink_groups {
 #define RTNLGRP_NEXTHOP		RTNLGRP_NEXTHOP
 	RTNLGRP_BRVLAN,
 #define RTNLGRP_BRVLAN		RTNLGRP_BRVLAN
+	RTNLGRP_BRIGMP,
+#define RTNLGRP_BRIGMP		RTNLGRP_BRIGMP
 	__RTNLGRP_MAX
 };
 #define RTNLGRP_MAX	(__RTNLGRP_MAX - 1)
@@ -771,6 +786,27 @@ enum {
 #define RTEXT_FILTER_BRVLAN	(1 << 1)
 #define RTEXT_FILTER_BRVLAN_COMPRESSED	(1 << 2)
 #define	RTEXT_FILTER_SKIP_STATS	(1 << 3)
+#define RTEXT_FILTER_COMPACT	(1 << 31)
+
+struct limitmsg {
+	unsigned char limit_family;
+	unsigned char limit__pad1;
+	unsigned short limit__pad2;
+	__u32 limit_id;
+};
+enum {
+	LIMIT_ATTR_UNSPEC,
+	LIMIT_ATTR_BW,
+	LIMIT_ATTR_STATS,
+	LIMIT_ATTR_PAD,
+	__LIMIT_ATTR_MAX,
+#define LIMIT_ATTR_MAX (__LIMIT_ATTR_MAX - 1)
+};
+struct limitstats {
+	__u64 tried_bytes;
+	__u64 admitted_bytes;
+	__u32 timestamp;
+};
 
 /* End of information exported to user level */
 

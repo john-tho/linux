@@ -89,6 +89,8 @@ struct va_format {
 	va_list *va;
 };
 
+extern void get_some_log(char *buf, int amount);
+
 /*
  * FW_BUG
  * Add this to a message where you are sure the firmware is buggy or behaves
@@ -202,7 +204,6 @@ __printf(1, 2) void dump_stack_set_arch_desc(const char *fmt, ...);
 void dump_stack_print_info(const char *log_lvl);
 void show_regs_print_info(const char *log_lvl);
 extern asmlinkage void dump_stack(void) __cold;
-extern void printk_safe_init(void);
 extern void printk_safe_flush(void);
 extern void printk_safe_flush_on_panic(void);
 #else
@@ -266,10 +267,6 @@ static inline void show_regs_print_info(const char *log_lvl)
 }
 
 static inline void dump_stack(void)
-{
-}
-
-static inline void printk_safe_init(void)
 {
 }
 

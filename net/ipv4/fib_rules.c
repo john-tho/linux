@@ -112,6 +112,8 @@ static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 
 	switch (rule->action) {
 	case FR_ACT_TO_TBL:
+	case FR_ACT_ONLY_TO_TBL:
+	case FR_ACT_FWMARK_TBL:
 		break;
 
 	case FR_ACT_UNREACHABLE:
@@ -127,12 +129,18 @@ static int fib4_rule_action(struct fib_rule *rule, struct flowi *flp,
 
 	rcu_read_lock();
 
-	tb_id = fib_rule_get_table(rule, arg);
+	if (rule->action == FR_ACT_FWMARK_TBL) {
+	    tb_id = (flp->flowi_mark & 0xffff);
+	    tb_id += (tb_id == RT_TABLE_MAIN ? 0 : 100000);
+	}
+	else tb_id = fib_rule_get_table(rule, arg);
 	tbl = fib_get_table(rule->fr_net, tb_id);
 	if (tbl)
 		err = fib_table_lookup(tbl, &flp->u.ip4,
 				       (struct fib_result *)arg->result,
 				       arg->flags);
+	if (err == -EAGAIN && rule->action == FR_ACT_ONLY_TO_TBL)
+		err = -ENETUNREACH;
 
 	rcu_read_unlock();
 	return err;
@@ -236,7 +244,8 @@ static int fib4_rule_configure(struct fib_rule *rule, struct sk_buff *skb,
 		goto errout;
 
 	if (rule->table == RT_TABLE_UNSPEC && !rule->l3mdev) {
-		if (rule->action == FR_ACT_TO_TBL) {
+		if (rule->action == FR_ACT_TO_TBL ||
+		    rule->action == FR_ACT_ONLY_TO_TBL) {
 			struct fib_table *table;
 
 			table = fib_empty_table(net);
@@ -389,13 +398,16 @@ static int fib_default_rules_init(struct fib_rules_ops *ops)
 {
 	int err;
 
-	err = fib_default_rule_add(ops, 0, RT_TABLE_LOCAL, 0);
+	err = fib_default_rule_add(ops, 200, RT_TABLE_LOCAL, 0);
 	if (err < 0)
 		return err;
-	err = fib_default_rule_add(ops, 0x7FFE, RT_TABLE_MAIN, 0);
+	err = fib_default_rule_add(ops, 0x7FFF0800, RT_TABLE_UNSPEC, 0);
 	if (err < 0)
 		return err;
-	err = fib_default_rule_add(ops, 0x7FFF, RT_TABLE_DEFAULT, 0);
+	err = fib_default_rule_add(ops, 0x7FFFFFFE, RT_TABLE_MAIN, 0);
+	if (err < 0)
+		return err;
+	err = fib_default_rule_add(ops, 0x7FFFFFFF, RT_TABLE_DEFAULT, 0);
 	if (err < 0)
 		return err;
 	return 0;
@@ -414,7 +426,7 @@ int __net_init fib4_rules_init(struct net *net)
 	if (err < 0)
 		goto fail;
 	net->ipv4.rules_ops = ops;
-	net->ipv4.fib_has_custom_rules = false;
+	net->ipv4.fib_has_custom_rules = true;
 	net->ipv4.fib_rules_require_fldissect = 0;
 	return 0;
 

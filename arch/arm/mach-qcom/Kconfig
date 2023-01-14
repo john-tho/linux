@@ -6,7 +6,10 @@ menuconfig ARCH_QCOM
 	select ARM_GIC
 	select ARM_AMBA
 	select PINCTRL
+	select CPU_V7
+	select HAVE_ARM_ARCH_TIMER
 	select QCOM_SCM if SMP
+	select PM_OPP
 	help
 	  Support for Qualcomm's devicetree based systems.
 

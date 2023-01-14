@@ -694,6 +694,19 @@ static int spinand_mtd_block_isreserved(struct mtd_info *mtd, loff_t offs)
 	return ret;
 }
 
+static int spinand_read_fact(struct mtd_info *mtd, loff_t from,
+			     size_t len, size_t *retlen, u_char *buf) {
+	struct spinand_device *spinand = mtd_to_spinand(mtd);
+	if (from == 0) {
+		/* return nand id, strip away dummy byte */
+		*retlen = min((int)len, spinand->id.len - 1);
+		memset(buf, 0, len);
+		memcpy(buf, spinand->id.data + 1, *retlen);
+		return 0;
+	}
+	return -ESRCH;
+}
+
 static int spinand_create_dirmap(struct spinand_device *spinand,
 				 unsigned int plane)
 {
@@ -760,6 +773,7 @@ static const struct spinand_manufacturer *spinand_manufacturers[] = {
 	&paragon_spinand_manufacturer,
 	&toshiba_spinand_manufacturer,
 	&winbond_spinand_manufacturer,
+	&foresee_spinand_manufacturer,
 };
 
 static int spinand_manufacturer_detect(struct spinand_device *spinand)
@@ -1039,6 +1053,7 @@ static int spinand_init(struct spinand_device *spinand)
 	mtd->_block_isreserved = spinand_mtd_block_isreserved;
 	mtd->_erase = spinand_mtd_erase;
 	mtd->_max_bad_blocks = nanddev_mtd_max_bad_blocks;
+	mtd->_read_fact_prot_reg = spinand_read_fact;
 
 	if (spinand->eccinfo.ooblayout)
 		mtd_set_ooblayout(mtd, spinand->eccinfo.ooblayout);
@@ -1077,6 +1092,9 @@ static void spinand_cleanup(struct spinand_device *spinand)
 
 static int spinand_probe(struct spi_mem *mem)
 {
+#ifdef CONFIG_MTD_NAND_RB
+	extern int rb_nand_register_partitions(struct mtd_info *mtd);
+#endif
 	struct spinand_device *spinand;
 	struct mtd_info *mtd;
 	int ret;
@@ -1097,6 +1115,10 @@ static int spinand_probe(struct spi_mem *mem)
 	if (ret)
 		return ret;
 
+#ifdef CONFIG_MTD_NAND_RB
+	rb_nand_register_partitions(mtd);
+	return 0;
+#else
 	ret = mtd_device_register(mtd, NULL, 0);
 	if (ret)
 		goto err_spinand_cleanup;
@@ -1107,6 +1129,7 @@ err_spinand_cleanup:
 	spinand_cleanup(spinand);
 
 	return ret;
+#endif
 }
 
 static int spinand_remove(struct spi_mem *mem)

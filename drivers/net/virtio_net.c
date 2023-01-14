@@ -3006,6 +3006,8 @@ static int virtnet_probe(struct virtio_device *vdev)
 	if (!dev)
 		return -ENOMEM;
 
+	dev->needs_free_netdev = true;
+
 	/* Set up network device as normal. */
 	dev->priv_flags |= IFF_UNICAST_FLT | IFF_LIVE_ADDR_CHANGE;
 	dev->netdev_ops = &virtnet_netdev;
@@ -3021,6 +3023,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 		if (csum)
 			dev->features |= NETIF_F_HW_CSUM | NETIF_F_SG;
 
+#if 0		
 		if (virtio_has_feature(vdev, VIRTIO_NET_F_GSO)) {
 			dev->hw_features |= NETIF_F_TSO
 				| NETIF_F_TSO_ECN | NETIF_F_TSO6;
@@ -3032,6 +3035,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 			dev->hw_features |= NETIF_F_TSO6;
 		if (virtio_has_feature(vdev, VIRTIO_NET_F_HOST_ECN))
 			dev->hw_features |= NETIF_F_TSO_ECN;
+#endif		
 
 		dev->features |= NETIF_F_GSO_ROBUST;
 
@@ -3133,6 +3137,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 	if (vi->mergeable_rx_bufs)
 		dev->sysfs_rx_queue_group = &virtio_net_mrg_rx_group;
 #endif
+
 	netif_set_real_num_tx_queues(dev, vi->curr_queue_pairs);
 	netif_set_real_num_rx_queues(dev, vi->curr_queue_pairs);
 
@@ -3160,7 +3165,8 @@ static int virtnet_probe(struct virtio_device *vdev)
 		goto free_unregister_netdev;
 	}
 
-	virtnet_set_queues(vi, vi->curr_queue_pairs);
+	virtnet_set_queues(vi, min_t(int, num_online_cpus(), vi->max_queue_pairs));
+	virtnet_set_affinity(vi);
 
 	/* Assume link up if device can't report link status,
 	   otherwise get link status from config. */
@@ -3221,13 +3227,13 @@ static void virtnet_remove(struct virtio_device *vdev)
 	/* Make sure no work handler is accessing the device. */
 	flush_work(&vi->config_work);
 
-	unregister_netdev(vi->dev);
+	remove_vq_common(vi);
 
 	net_failover_destroy(vi->failover);
 
 	remove_vq_common(vi);
 
-	free_netdev(vi->dev);
+	unregister_netdev(vi->dev);
 }
 
 static __maybe_unused int virtnet_freeze(struct virtio_device *vdev)

@@ -1470,7 +1470,9 @@ static int process_urq(struct sk_buff *skb, struct nf_conn *ct,
 	}
 
 	/* Clear old expect */
+	local_bh_disable();
 	nf_ct_remove_expectations(ct);
+	local_bh_enable();
 	info->sig_port[dir] = 0;
 	info->sig_port[!dir] = 0;
 

@@ -66,8 +66,9 @@ void dump_backtrace_entry(unsigned long where, unsigned long from, unsigned long
 {
 	unsigned long end = frame + 4 + sizeof(struct pt_regs);
 
-#ifdef CONFIG_KALLSYMS
-	printk("[<%08lx>] (%ps) from [<%08lx>] (%pS)\n", where, (void *)where, from, (void *)from);
+//#ifdef CONFIG_KALLSYMS
+#if 1
+	printk("{%08lx} %pS\n", frame, (void *)from);
 #else
 	printk("Function entered at [<%08lx>] from [<%08lx>]\n", where, from);
 #endif
@@ -286,8 +287,8 @@ static int __die(const char *str, int err, struct pt_regs *regs)
 		 TASK_COMM_LEN, tsk->comm, task_pid_nr(tsk), end_of_stack(tsk));
 
 	if (!user_mode(regs) || in_interrupt()) {
-		dump_mem(KERN_EMERG, "Stack: ", regs->ARM_sp,
-			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
+//		dump_mem(KERN_EMERG, "Stack: ", regs->ARM_sp,
+//			 THREAD_SIZE + (unsigned long)task_stack_page(tsk));
 		dump_backtrace(regs, tsk);
 		dump_instr(KERN_EMERG, regs);
 	}

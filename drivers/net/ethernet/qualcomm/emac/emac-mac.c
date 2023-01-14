@@ -919,9 +919,11 @@ static void emac_adjust_link(struct net_device *netdev)
 	if (phydev->link) {
 		emac_mac_start(adpt);
 		emac_sgmii_link_change(adpt, true);
+		writel(adpt->irq.mask, adpt->base + EMAC_INT_MASK);
 	} else {
 		emac_sgmii_link_change(adpt, false);
 		emac_mac_stop(adpt);
+		writel(0, adpt->base + EMAC_INT_MASK);
 	}
 
 	phy_print_status(phydev);
@@ -946,15 +948,13 @@ int emac_mac_up(struct emac_adapter *adpt)
 	}
 
 	phy_attached_print(adpt->phydev, NULL);
-
-	/* enable mac irq */
-	writel((u32)~DIS_INT, adpt->base + EMAC_INT_STATUS);
-	writel(adpt->irq.mask, adpt->base + EMAC_INT_MASK);
-
 	phy_start(adpt->phydev);
 
 	napi_enable(&adpt->rx_q.napi);
 	netif_start_queue(netdev);
+
+	/* enable mac irq */
+	writel((u32)~DIS_INT, adpt->base + EMAC_INT_STATUS);
 
 	return 0;
 }

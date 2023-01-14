@@ -89,6 +89,12 @@ struct switchdev_obj_port_mdb {
 	struct switchdev_obj obj;
 	unsigned char addr[ETH_ALEN];
 	u16 vid;
+	// MT extension
+	union {
+		__be32	ip4;
+		struct in6_addr ip6;
+	} u;
+	__be16 proto;
 };
 
 #define SWITCHDEV_OBJ_PORT_MDB(OBJ) \

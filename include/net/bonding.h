@@ -749,4 +749,27 @@ static inline void bond_tx_drop(struct net_device *dev, struct sk_buff *skb)
 	dev_kfree_skb_any(skb);
 }
 
+extern void (*switch_bond_add_sym)(struct net_device *, struct net_device *);
+extern void (*switch_bond_del_sym)(struct net_device *, struct net_device *);
+extern void (*switch_bond_set_state_sym)(struct net_device *,
+					 struct net_device *, bool);
+
+static inline void bond_offload_add(struct net_device *bond,
+				    struct net_device *slave) {
+	if (slave->priv_flags & IFF_SWITCH_PORT && switch_bond_add_sym)
+		switch_bond_add_sym(bond, slave);
+}
+
+static inline void bond_offload_del(struct net_device *bond,
+				    struct net_device *slave) {
+	if (slave->priv_flags & IFF_SWITCH_PORT && switch_bond_del_sym)
+		switch_bond_del_sym(bond, slave);
+}
+
+static inline void bond_offload_set(struct net_device *bond,
+				    struct net_device *slave, bool active) {
+	if (slave->priv_flags & IFF_SWITCH_PORT && switch_bond_set_state_sym)
+		switch_bond_set_state_sym(bond, slave, active);
+}
+
 #endif /* _NET_BONDING_H */

@@ -1,0 +1,9 @@
+ccflags-y := -I $(srctree)/drivers/soc/alpine/HAL/pbs/include
+ccflags-y += -I $(srctree)/drivers/soc/alpine/HAL/include/common
+ccflags-y += -I $(srctree)/drivers/soc/alpine/HAL/include/ssm
+ccflags-y += -I $(srctree)/drivers/soc/alpine/HAL/include/udma
+ccflags-y += -I $(srctree)/drivers/soc/alpine/HAL/include/iofic
+ccflags-y += -I $(srctree)/drivers/soc/alpine
+ccflags-y += -I $(srctree)/drivers/soc/alpine/HAL/drivers/cell
+obj-$(CONFIG_MTD_NAND_AL) += al-nand.o
+al-nand-objs += al_nand.o

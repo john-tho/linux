@@ -232,7 +232,7 @@ void hv_fcopy_onchannelcallback(void *context)
 	struct icmsg_hdr *icmsghdr;
 	int fcopy_srv_version;
 
-	if (fcopy_transaction.state > HVUTIL_READY)
+	if (fcopy_transaction.state != HVUTIL_READY)
 		return;
 
 	vmbus_recvpacket(channel, recv_buffer, HV_HYP_PAGE_SIZE * 2, &recvlen,
@@ -266,11 +266,6 @@ void hv_fcopy_onchannelcallback(void *context)
 		fcopy_transaction.recv_req_id = requestid;
 		fcopy_transaction.fcopy_msg = fcopy_msg;
 
-		if (fcopy_transaction.state < HVUTIL_READY) {
-			/* Userspace is not registered yet */
-			fcopy_respond_to_host(HV_E_FAIL);
-			return;
-		}
 		fcopy_transaction.state = HVUTIL_HOSTMSG_RECEIVED;
 
 		/*

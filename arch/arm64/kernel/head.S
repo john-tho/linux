@@ -707,7 +707,7 @@ ENTRY(secondary_entry)
 	b	secondary_startup
 ENDPROC(secondary_entry)
 
-secondary_startup:
+ENTRY(secondary_startup)
 	/*
 	 * Common entry point for secondary CPUs.
 	 */

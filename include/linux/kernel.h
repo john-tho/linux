@@ -280,6 +280,11 @@ extern void __cant_sleep(const char *file, int line, int preempt_offset);
 	__builtin_types_compatible_p(typeof(x), unsigned type),		\
 	({ signed type __x = (x); __x < 0 ? -__x : __x; }), other)
 
+struct notifier_block;
+
+extern int register_panic_notifier(struct notifier_block *nb);
+extern int unregister_panic_notifier(struct notifier_block *nb);
+
 /**
  * reciprocal_scale - "scale" a value into range [0, ep_ro)
  * @val: value

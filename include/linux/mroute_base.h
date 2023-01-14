@@ -25,6 +25,9 @@
  * @remote: Remote address for tunnels
  */
 struct vif_device {
+	struct list_head list;
+	unsigned index;
+
 	struct net_device *dev;
 	unsigned long bytes_in, bytes_out;
 	unsigned long pkt_in, pkt_out;
@@ -89,15 +92,6 @@ static inline int mr_call_vif_notifiers(struct net *net,
 	return call_fib_notifiers(net, event_type, &info.info);
 }
 
-#ifndef MAXVIFS
-/* This one is nasty; value is defined in uapi using different symbols for
- * mroute and morute6 but both map into same 32.
- */
-#define MAXVIFS	32
-#endif
-
-#define VIF_EXISTS(_mrt, _idx) (!!((_mrt)->vif_table[_idx].dev))
-
 /* mfc_flags:
  * MFC_STATIC - the entry was added statically (not by a routing daemon)
  * MFC_OFFLOAD - the entry was offloaded to the hardware
@@ -129,7 +123,7 @@ enum {
  */
 struct mr_mfc {
 	struct rhlist_head mnode;
-	unsigned short mfc_parent;
+	struct vif_device *mfc_parent;
 	int mfc_flags;
 
 	union {
@@ -139,13 +133,12 @@ struct mr_mfc {
 		} unres;
 		struct {
 			unsigned long last_assert;
-			int minvif;
-			int maxvif;
 			unsigned long bytes;
 			unsigned long pkt;
 			unsigned long wrong_if;
+			unsigned output_dev_count;
+			struct vif_device **output_devs;
 			unsigned long lastuse;
-			unsigned char ttls[MAXVIFS];
 			refcount_t refcount;
 		} res;
 	} mfc_un;
@@ -246,7 +239,7 @@ struct mr_table {
 	struct sock __rcu	*mroute_sk;
 	struct timer_list	ipmr_expire_timer;
 	struct list_head	mfc_unres_queue;
-	struct vif_device	vif_table[MAXVIFS];
+	struct list_head	vif_list;
 	struct rhltable		mfc_hash;
 	struct list_head	mfc_cache_list;
 	int			maxvif;
@@ -254,7 +247,7 @@ struct mr_table {
 	bool			mroute_do_assert;
 	bool			mroute_do_pim;
 	bool			mroute_do_wrvifwhole;
-	int			mroute_reg_vif_num;
+	struct vif_device	*reg_vif;
 };
 
 #ifdef CONFIG_IP_MROUTE_COMMON
@@ -275,10 +268,10 @@ mr_table_alloc(struct net *net, u32 id,
 /* These actually return 'struct mr_mfc *', but to avoid need for explicit
  * castings they simply return void.
  */
-void *mr_mfc_find_parent(struct mr_table *mrt,
-			 void *hasharg, int parent);
-void *mr_mfc_find_any_parent(struct mr_table *mrt, int vifi);
-void *mr_mfc_find_any(struct mr_table *mrt, int vifi, void *hasharg);
+void *mr_mfc_find_parent(struct mr_table *mrt, void *hasharg, int parent);
+void *mr_mfc_find_any_parent(struct mr_table *mrt, struct vif_device *vif);
+void *mr_mfc_find_any(struct mr_table *mrt, struct vif_device *vif,
+		      void *hasharg);
 
 int mr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
 		   struct mr_mfc *c, struct rtmsg *rtm);

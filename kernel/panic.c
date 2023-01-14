@@ -60,6 +60,32 @@ ATOMIC_NOTIFIER_HEAD(panic_notifier_list);
 
 EXPORT_SYMBOL(panic_notifier_list);
 
+int register_panic_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&panic_notifier_list, nb);
+}
+EXPORT_SYMBOL(register_panic_notifier);
+
+int unregister_panic_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&panic_notifier_list, nb);
+}
+EXPORT_SYMBOL(unregister_panic_notifier);
+
+ATOMIC_NOTIFIER_HEAD(oops_notifier_list);
+
+int register_oops_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&oops_notifier_list, nb);
+}
+EXPORT_SYMBOL(register_oops_notifier);
+
+int unregister_oops_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&oops_notifier_list, nb);
+}
+EXPORT_SYMBOL(unregister_oops_notifier);
+
 static long no_blink(int state)
 {
 	return 0;
@@ -255,10 +281,9 @@ void panic(const char *fmt, ...)
 		crash_smp_send_stop();
 	}
 
-	/*
-	 * Run any panic handlers, including those that might need to
-	 * add information to the kmsg dump output.
-	 */
+#ifdef CONFIG_TILE
+	dump_stack();
+#endif
 	atomic_notifier_call_chain(&panic_notifier_list, 0, buf);
 
 	/* Call flush even twice. It tries harder with a single online CPU */
@@ -335,6 +360,9 @@ void panic(const char *fmt, ...)
 #endif
 #if defined(CONFIG_S390)
 	disabled_wait();
+#endif
+#ifdef CONFIG_TILE
+	machine_halt();
 #endif
 	pr_emerg("---[ end Kernel panic - not syncing: %s ]---\n", buf);
 
@@ -470,7 +498,7 @@ static void do_oops_enter_exit(void)
 			spin_counter = pause_on_oops;
 			do {
 				spin_unlock(&pause_on_oops_lock);
-				spin_msec(MSEC_PER_SEC);
+				spin_msec(1);
 				spin_lock(&pause_on_oops_lock);
 			} while (--spin_counter);
 			pause_on_oops_flag = 0;
@@ -545,8 +573,10 @@ void print_oops_end_marker(void)
  */
 void oops_exit(void)
 {
-	do_oops_enter_exit();
 	print_oops_end_marker();
+
+	atomic_notifier_call_chain(&oops_notifier_list, 0, 0);
+	do_oops_enter_exit();
 	kmsg_dump(KMSG_DUMP_OOPS);
 }
 

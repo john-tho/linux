@@ -3,6 +3,10 @@
 # Makefile for the netfilter modules on top of IPv6.
 #
 
+subdir-ccflags-$(CONFIG_ARM) += -O2
+subdir-ccflags-$(CONFIG_ARM64) += -O2
+subdir-ccflags-$(CONFIG_TILE) += -O2
+
 # Link order matters here.
 obj-$(CONFIG_IP6_NF_IPTABLES) += ip6_tables.o
 obj-$(CONFIG_IP6_NF_FILTER) += ip6table_filter.o

@@ -1,0 +1,16 @@
+#
+# Alpine SoC drivers configuration
+#
+
+menuconfig AL_HAL
+	depends on ARM || ARM64
+        tristate "Alpine Hardware Abstraction Layer"
+        help
+          Enable this to get Alpine HAL support
+
+config ALPINE_PLATFORM
+	depends on ARM || ARM64
+	string "Alpine Platform Type"
+	help
+		choose Alpine SOC type (e.g. TOPROCK).
+

@@ -121,8 +121,12 @@ static void __booke_wdt_ping(void *data)
 	mtspr(SPRN_TSR, TSR_ENW|TSR_WIS);
 }
 
+static void noop(void *data) {
+}
+
 static int booke_wdt_ping(struct watchdog_device *wdog)
 {
+	on_each_cpu(noop, NULL, 1);
 	on_each_cpu(__booke_wdt_ping, NULL, 0);
 
 	return 0;
@@ -137,9 +141,26 @@ static void __booke_wdt_enable(void *data)
 	__booke_wdt_ping(NULL);
 	val = mfspr(SPRN_TCR);
 	val &= ~WDTP_MASK;
+#ifdef CONFIG_4xx
+	val |= (TCR_WIE|TCR_WRC(WRC_SYSTEM)|WDTP(sec_to_period(wdog->timeout)));
+#else
 	val |= (TCR_WIE|TCR_WRC(WRC_CHIP)|WDTP(sec_to_period(wdog->timeout)));
+#endif
 
 	mtspr(SPRN_TCR, val);
+}
+
+static void booke_wdt_timer_ping(struct timer_list *t);
+static DEFINE_TIMER(wdt_timer, booke_wdt_timer_ping);
+
+static unsigned persistent = 0;
+
+static void booke_wdt_timer_ping(struct timer_list *t)
+{
+	if (persistent) {
+	    booke_wdt_ping(NULL);
+	    mod_timer(&wdt_timer, jiffies + 5 * HZ);
+	}
 }
 
 /**
@@ -185,6 +206,7 @@ static int booke_wdt_set_timeout(struct watchdog_device *wdt_dev,
 	wdt_dev->timeout = timeout;
 	booke_wdt_set(wdt_dev);
 
+	if (persistent) booke_wdt_timer_ping(0);
 	return 0;
 }
 

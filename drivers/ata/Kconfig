@@ -191,6 +191,15 @@ config AHCI_MVEBU
 
 	  If unsure, say N.
 
+config AHCI_ALPINE
+	bool "Annapurna labs Alpine AHCI SATA support"
+	depends on ARCH_ALPINE
+	help
+	  This option enables support for the Alpine SoC's
+	  onboard AHCI SATA.
+
+	  If unsure, say N.
+
 config AHCI_OCTEON
 	tristate "Cavium Octeon Soc Serial ATA"
 	depends on SATA_AHCI_PLATFORM && CAVIUM_OCTEON_SOC
@@ -1098,6 +1107,15 @@ config PATA_WINBOND_VLB
 	help
 	  Support for the Winbond W83759A controller on Vesa Local Bus
 	  systems.
+
+config PATA_RBPPC
+	tristate "Mikrotik PowerPC Routerboard Compact Flash support"
+	depends on PPC
+	help
+	  This option enables support for a Compact Flash on
+          Mikrotik PowerPC Routerboards
+
+	  If unsure, say N.
 
 comment "Generic fallback / legacy drivers"
 

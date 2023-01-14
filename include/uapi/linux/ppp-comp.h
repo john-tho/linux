@@ -27,7 +27,7 @@
  * Max # bytes for a CCP option
  */
 
-#define CCP_MAX_OPTION_LENGTH	32
+#define CCP_MAX_OPTION_LENGTH	64
 
 /*
  * Parts of a CCP packet.

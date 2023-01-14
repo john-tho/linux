@@ -63,7 +63,7 @@ UTS_MACHINE := $(subst $(space),,$(machine-y))
 
 # XXX This needs to be before we override LD below
 ifdef CONFIG_PPC32
-KBUILD_LDFLAGS_MODULE += arch/powerpc/lib/crtsavres.o
+#KBUILD_LDFLAGS_MODULE += arch/powerpc/lib/crtsavres.o
 else
 KBUILD_LDS_MODULE += $(srctree)/arch/powerpc/kernel/module.lds
 ifeq ($(call ld-ifversion, -ge, 225000000, y),y)
@@ -206,7 +206,7 @@ ifdef CONFIG_PPC32
 ifdef CONFIG_PPC_E500MC
 CFLAGS-y += $(call cc-option,-mcpu=e500mc,-mcpu=powerpc)
 else
-CFLAGS-$(CONFIG_E500) += $(call cc-option,-mcpu=8540 -msoft-float,-mcpu=powerpc)
+CFLAGS-$(CONFIG_E500) += $(call cc-option -msoft-float,-mcpu=powerpc)
 endif
 endif
 

@@ -50,6 +50,26 @@ config PINCTRL_IPQ8074
 	  Qualcomm Technologies Inc. IPQ8074 platform. Select this for
 	  IPQ8074.
 
+config PINCTRL_IPQ6018
+	tristate "Qualcomm Technologies, Inc. IPQ6018 pin controller driver"
+	depends on GPIOLIB && OF
+	select PINCTRL_MSM
+	help
+	  This is the pinctrl, pinmux, pinconf and gpiolib driver for
+	  the Qualcomm Technologies Inc. TLMM block found on the
+	  Qualcomm Technologies Inc. IPQ6018 platform. Select this for
+	  IPQ6018.
+
+config PINCTRL_IPQ5018
+        tristate "Qualcomm Technologies, Inc. IPQ5018 pin controller driver"
+        depends on GPIOLIB && OF
+        select PINCTRL_MSM
+        help
+          This is the pinctrl, pinmux, pinconf and gpiolib driver for
+          the Qualcomm Technologies Inc. TLMM block found on the
+          Qualcomm Technologies Inc. IPQ5018 platform. Select this for
+          IPQ5018.
+
 config PINCTRL_MSM8660
 	tristate "Qualcomm 8660 pin controller driver"
 	depends on GPIOLIB && OF
@@ -205,5 +225,31 @@ config PINCTRL_SM8150
 	 This is the pinctrl, pinmux, pinconf and gpiolib driver for the
 	 Qualcomm Technologies Inc TLMM block found on the Qualcomm
 	 Technologies Inc SM8150 platform.
+
+config PINCTRL_SDXPRAIRIE
+	tristate "Qualcomm Technologies Inc SDXPRAIRIE pin controller driver"
+	depends on GPIOLIB && OF
+	select PINCTRL_MSM
+	help
+	  This is the pinctrl, pinmux, pinconf and gpiolib driver for
+	  the Qualcomm Technologies Inc TLMM block found on the Qualcomm
+	  Technologies Inc SDXPRAIRIE platform.
+
+config PINCTRL_SDX20
+	tristate "Qualcomm Technologies Inc SDX20 pin controller driver"
+	depends on GPIOLIB && OF
+	select PINCTRL_MSM
+	help
+	  This is the pinctrl, pinmux, pinconf and gpiolib driver for
+	  the Qualcomm Technologies Inc TLMM block found on the Qualcomm
+	  Technologies Inc SDX20 platform.
+
+config PINCTRL_MDM9607
+	tristate "QTI MDM9607 pin controller driver"
+	depends on GPIOLIB && OF
+	select PINCTRL_MSM
+	help
+	  This is the pinctrl, pinmux, pinconf and gpiolib driver for the
+	  QTI TLMM block found in the QTI 9607 platform.
 
 endif

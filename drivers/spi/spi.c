@@ -30,6 +30,7 @@
 #include <linux/kthread.h>
 #include <linux/ioport.h>
 #include <linux/acpi.h>
+#include <linux/sched.h>
 #include <linux/highmem.h>
 #include <linux/idr.h>
 #include <linux/platform_data/x86/apple.h>
@@ -3674,7 +3675,7 @@ EXPORT_SYMBOL_GPL(spi_async_locked);
  * inline functions.
  */
 
-static void spi_complete(void *arg)
+void spi_complete(void *arg)
 {
 	complete(arg);
 }
@@ -3758,6 +3759,10 @@ int spi_sync(struct spi_device *spi, struct spi_message *message)
 {
 	int ret;
 
+	if (spi->controller->transfer != spi_queued_transfer) {
+		return __spi_sync(spi, message);
+	}
+
 	mutex_lock(&spi->controller->bus_lock_mutex);
 	ret = __spi_sync(spi, message);
 	mutex_unlock(&spi->controller->bus_lock_mutex);
@@ -3807,6 +3812,15 @@ int spi_bus_lock(struct spi_controller *ctlr)
 {
 	unsigned long flags;
 
+#if defined(CONFIG_MIPS_MIKROTIK) && defined(CONFIG_CPU_BIG_ENDIAN)
+	/* fix for RouterBOARD RB400 - micro-sd not to block NAND access */
+	if (ctlr->unlocked_at_jiffies - ctlr->locked_at_jiffies > 1 &&
+	    ctlr->unlocked_at_jiffies == jiffies) {
+		schedule();
+	}
+	ctlr->locked_at_jiffies = jiffies;
+#endif // MIPS_MIKROTIK
+
 	mutex_lock(&ctlr->bus_lock_mutex);
 
 	spin_lock_irqsave(&ctlr->bus_lock_spinlock, flags);
@@ -3834,6 +3848,9 @@ EXPORT_SYMBOL_GPL(spi_bus_lock);
  */
 int spi_bus_unlock(struct spi_controller *ctlr)
 {
+#if defined(CONFIG_MIPS_MIKROTIK) && defined(CONFIG_CPU_BIG_ENDIAN)
+	ctlr->unlocked_at_jiffies = jiffies;
+#endif
 	ctlr->bus_lock_flag = 0;
 
 	mutex_unlock(&ctlr->bus_lock_mutex);

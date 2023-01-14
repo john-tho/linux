@@ -1,0 +1,115 @@
+/dts-v1/;
+#define BIG_DK
+#define NAND
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "450Gx4";
+
+	leds {
+		compatible = "leds-rb";
+		user-led {
+			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		};
+		power-led {
+			gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		button {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+
+	beeper {
+		compatible = "rb,gpio-beep";
+		gpios = <&tlmm 2 GPIO_ACTIVE_HIGH>;
+	};
+
+	poe_out_simple: poe-out-simple {
+		compatible = "rb,poe-out-simple";
+		eth_port = <4>;
+		gpo_on = <&tlmm 42 GPIO_ACTIVE_HIGH>;
+		gpi_status = <&tlmm 41 GPIO_ACTIVE_HIGH>;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	edma_pins: ema_pinmux {
+		mux {
+			pins = "gpio6", "gpio7";
+			function = "mdio";
+			bias-disable;
+		};
+	};
+	sd_0_pins: sd_0_pinmux {
+		sd0 {
+			pins = "gpio23";
+			function = "sdio";
+			drive-strength = <10>;
+		};
+		sd1 {
+			pins = "gpio24";
+			function = "sdio";
+			drive-strength = <10>;
+		};
+		sd2 {
+			pins = "gpio25";
+			function = "sdio";
+			drive-strength = <10>;
+		};
+		sd3 {
+			pins = "gpio26";
+			function = "sdio";
+			drive-strength = <10>;
+		};
+		sdclk {
+			pins = "gpio27";
+			function = "sdio";
+			drive-strength = <16>;
+		};
+		sdcmd {
+			pins = "gpio28";
+			function = "sdio";
+			drive-strength = <10>;
+		};
+	};
+};
+
+&edma {
+	port_map = <0 1 2 3 4(-1)>;
+	pinctrl-0 = <&edma_pins>;
+	pinctrl-names = "default";
+};
+
+&sdhc {
+	pinctrl-0 = <&sd_0_pins>;
+	pinctrl-names = "default";
+	status = "ok";
+};
+
+&tlmm {
+	ts_cs_pin: ts_cs_pin_pinmux {
+		mux {
+			pins = "gpio34";
+			function = "gpio";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&spi_0 {
+	num-cs = <2>;
+	cs-gpios = <0>, <&tlmm 34 GPIO_ACTIVE_LOW>;
+	spi-ts@1 {
+		pinctrl-0 = <&ts_cs_pin>;
+		pinctrl-names = "default";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "rb-spi-ts";
+		spi-max-frequency = <1000000>;
+		reg = <1>;
+	};
+};

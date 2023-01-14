@@ -40,8 +40,6 @@
 #define MRT_FLUSH_MFC_STATIC	2	/* Flush static multicast entries */
 #define MRT_FLUSH_VIFS	4	/* Flush multicast vifs */
 #define MRT_FLUSH_VIFS_STATIC	8	/* Flush static multicast vifs */
-
-#define MAXVIFS		32
 typedef unsigned long vifbitmap_t;	/* User mode code depends on this lot */
 typedef unsigned short vifi_t;
 #define ALL_VIFS	((vifi_t)(-1))
@@ -81,11 +79,12 @@ struct mfcctl {
 	struct in_addr mfcc_origin;		/* Origin of mcast	*/
 	struct in_addr mfcc_mcastgrp;		/* Group in question	*/
 	vifi_t	mfcc_parent;			/* Where it arrived	*/
-	unsigned char mfcc_ttls[MAXVIFS];	/* Where it is going	*/
 	unsigned int mfcc_pkt_cnt;		/* pkt count for src-grp */
 	unsigned int mfcc_byte_cnt;
 	unsigned int mfcc_wrong_if;
 	int	     mfcc_expire;
+	unsigned mfcc_output_dev_cnt;
+	unsigned mfcc_output_devs[];
 };
 
 /*  Group count retrieval for mrouted */
@@ -113,8 +112,7 @@ struct igmpmsg {
 	__u32 unused1,unused2;
 	unsigned char im_msgtype;		/* What is this */
 	unsigned char im_mbz;			/* Must be zero */
-	unsigned char im_vif;			/* Interface (this ought to be a vifi_t!) */
-	unsigned char unused3;
+	vifi_t im_vif;
 	struct in_addr im_src,im_dst;
 };
 

@@ -11,6 +11,7 @@ struct mpls_iptunnel_encap {
 	u8	ttl_propagate;
 	u8	default_ttl;
 	u8	reserved1;
+	u32 	limit;
 	u32	label[0];
 };
 

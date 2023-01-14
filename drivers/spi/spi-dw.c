@@ -124,6 +124,9 @@ static inline void dw_spi_debugfs_remove(struct dw_spi *dws)
 }
 #endif /* CONFIG_DEBUG_FS */
 
+void dw_spi_cs_lock(void);
+void dw_spi_cs_unlock(void);
+
 void dw_spi_set_cs(struct spi_device *spi, bool enable)
 {
 	struct dw_spi *dws = spi_controller_get_devdata(spi->controller);
@@ -133,10 +136,14 @@ void dw_spi_set_cs(struct spi_device *spi, bool enable)
 	if (chip && chip->cs_control)
 		chip->cs_control(!enable);
 
-	if (!enable)
+	if (!enable) {
+		dw_spi_cs_lock();
 		dw_writel(dws, DW_SPI_SER, BIT(spi->chip_select));
-	else if (dws->cs_override)
+	}
+	else if (dws->cs_override) {
 		dw_writel(dws, DW_SPI_SER, 0);
+		dw_spi_cs_unlock();
+	}
 }
 EXPORT_SYMBOL_GPL(dw_spi_set_cs);
 

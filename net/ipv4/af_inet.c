@@ -952,6 +952,7 @@ int inet_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 	case SIOCSIFDSTADDR:
 	case SIOCSIFPFLAGS:
 	case SIOCSIFFLAGS:
+	case SIOCSPROXYARP:
 		if (copy_from_user(&ifr, p, sizeof(struct ifreq)))
 			return -EFAULT;
 		err = devinet_ioctl(net, cmd, &ifr);
@@ -1441,8 +1442,8 @@ struct sk_buff *inet_gro_receive(struct list_head *head, struct sk_buff *skb)
 	if (unlikely(ip_fast_csum((u8 *)iph, 5)))
 		goto out_unlock;
 
-	id = ntohl(*(__be32 *)&iph->id);
-	flush = (u16)((ntohl(*(__be32 *)iph) ^ skb_gro_len(skb)) | (id & ~IP_DF));
+	id = ntohl(get_unaligned((__be32 *)&iph->id));
+	flush = (u16)((ntohl(get_unaligned((__be32 *)iph)) ^ skb_gro_len(skb)) | (id & ~IP_DF));
 	id >>= 16;
 
 	list_for_each_entry(p, head, list) {

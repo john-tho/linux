@@ -88,6 +88,7 @@ static int clk_branch_wait(const struct clk_branch *br, bool enabling,
 				return 0;
 			udelay(1);
 		}
+		if (!br->silent)
 		WARN(1, "%s status stuck at 'o%s'", name,
 				enabling ? "ff" : "n");
 		return -EBUSY;

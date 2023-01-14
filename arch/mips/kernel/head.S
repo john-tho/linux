@@ -79,7 +79,7 @@ FEXPORT(__kernel_entry)
 	j	kernel_entry
 #endif /* CONFIG_BOOT_RAW */
 
-	__REF
+	__HEAD
 
 NESTED(kernel_entry, 16, sp)			# kernel entry point
 
@@ -90,7 +90,7 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
 	/* We might not get launched at the address the kernel is linked to,
 	   so we jump there.  */
 	PTR_LA	t0, 0f
-	jr	t0
+	jr.hb	t0
 0:
 
 #ifdef CONFIG_USE_OF

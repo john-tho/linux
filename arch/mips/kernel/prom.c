@@ -75,7 +75,7 @@ int __init __dt_register_buses(const char *bus0, const char *bus1)
 	static struct of_device_id of_ids[3];
 
 	if (!of_have_populated_dt())
-		panic("device tree not present");
+		return 0;
 
 	strlcpy(of_ids[0].compatible, bus0, sizeof(of_ids[0].compatible));
 	if (bus1) {

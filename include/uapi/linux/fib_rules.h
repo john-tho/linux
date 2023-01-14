@@ -82,6 +82,9 @@ enum {
 	FR_ACT_BLACKHOLE,	/* Drop without notification */
 	FR_ACT_UNREACHABLE,	/* Drop with ENETUNREACH */
 	FR_ACT_PROHIBIT,	/* Drop with EACCES */
+	FR_ACT_ONLY_TO_TBL,	/* Pass to fixed table and drop
+                                   with ENETUNREACH if table lookup failed */
+	FR_ACT_FWMARK_TBL,	/* Pass to table with same id as flow fwmark */
 	__FR_ACT_MAX,
 };
 

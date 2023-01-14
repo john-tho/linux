@@ -244,6 +244,40 @@ static void mt7621_spi_write_half_duplex(struct mt7621_spi *rs,
 	rs->pending_write = len;
 }
 
+static void mt7621_spi_rw(struct mt7621_spi *rs,
+			  int len, const u8 *tx, u8 *rx)
+{
+	int i;
+	u32 val;
+	u32 master;
+	int cmd_len = rs->pending_write;
+
+	// populate tx data in DATA[0..4] registers
+	rs->pending_write = 4;
+	mt7621_spi_write_half_duplex(rs, len, tx);
+	rs->pending_write = 0;
+
+	master = mt7621_spi_read(rs, MT7621_SPI_MASTER);
+	mt7621_spi_write(rs, MT7621_SPI_MASTER, master | MASTER_FULL_DUPLEX);
+	mt7621_spi_write(rs, MT7621_SPI_MOREBUF,
+			 ((cmd_len * 8) << 24) | ((len * 8) << 12) | len * 8);
+
+	val = mt7621_spi_read(rs, MT7621_SPI_TRANS);
+	val |= SPI_CTL_START;
+	mt7621_spi_write(rs, MT7621_SPI_TRANS, val);
+
+	mt7621_spi_wait_till_ready(rs);
+
+	for (i = 0; i < len; i++) {
+		if ((i % 4) == 0)
+			val = mt7621_spi_read(rs, MT7621_SPI_DATA4 + i);
+		*rx++ = val & 0xff;
+		val >>= 8;
+	}
+
+	mt7621_spi_write(rs, MT7621_SPI_MASTER, master);
+}
+
 static int mt7621_spi_transfer_one_message(struct spi_controller *master,
 					   struct spi_message *m)
 {
@@ -277,8 +311,15 @@ static int mt7621_spi_transfer_one_message(struct spi_controller *master,
 			 * support is broken since we have no way to read
 			 * the MISO value during that bit.
 			 */
+			if (rs->pending_write == 0 || rs->pending_write > 4 ||
+			    t->len > 16) {
+				printk_ratelimited(
+					"spi-mt7621 ERROR: full-duplex"
+					" limitation exceeded\n");
 			status = -EIO;
 			goto msg_done;
+			}
+			mt7621_spi_rw(rs, t->len, t->tx_buf, t->rx_buf);
 		} else if (t->rx_buf) {
 			mt7621_spi_read_half_duplex(rs, t->len, t->rx_buf);
 		} else if (t->tx_buf) {
@@ -357,7 +398,6 @@ static int mt7621_spi_probe(struct platform_device *pdev)
 	}
 
 	master->mode_bits = SPI_LSB_FIRST;
-	master->flags = SPI_CONTROLLER_HALF_DUPLEX;
 	master->setup = mt7621_spi_setup;
 	master->transfer_one_message = mt7621_spi_transfer_one_message;
 	master->bits_per_word_mask = SPI_BPW_MASK(8);

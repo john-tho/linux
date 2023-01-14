@@ -25,6 +25,9 @@
 #include "mmu.h"
 #include "smp.h"
 
+int xen_hvm_crash_shutdown_mode = SHUTDOWN_soft_reset;
+EXPORT_SYMBOL_GPL(xen_hvm_crash_shutdown_mode);
+
 static unsigned long shared_info_pfn;
 
 void xen_hvm_init_shared_info(void)
@@ -129,7 +132,7 @@ static void xen_hvm_shutdown(void)
 static void xen_hvm_crash_shutdown(struct pt_regs *regs)
 {
 	native_machine_crash_shutdown(regs);
-	xen_reboot(SHUTDOWN_soft_reset);
+	xen_reboot(xen_hvm_crash_shutdown_mode);
 }
 #endif
 

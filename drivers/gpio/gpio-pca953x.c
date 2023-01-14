@@ -21,6 +21,7 @@
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
+#include <linux/of_device.h>
 
 #include <asm/unaligned.h>
 
@@ -162,6 +163,10 @@ struct pca953x_chip {
 	struct regulator *regulator;
 
 	const struct pca953x_reg_config *regs;
+
+	unsigned long last_read_jiffies[MAX_BANK];
+	u8 last_read_value[MAX_BANK];
+	uint16_t cache_jiffies;
 };
 
 static int pca953x_bank_shift(struct pca953x_chip *chip)
@@ -415,10 +420,17 @@ static int pca953x_gpio_get_value(struct gpio_chip *gc, unsigned off)
 				       true, false);
 	u8 bit = BIT(off % BANK_SZ);
 	u32 reg_val;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&chip->i2c_lock);
+	if ((jiffies - chip->last_read_jiffies[off / BANK_SZ]) >= chip->cache_jiffies) {
 	ret = regmap_read(chip->regmap, inreg, &reg_val);
+		chip->last_read_value[off / BANK_SZ] = reg_val;
+		chip->last_read_jiffies[off / BANK_SZ] = jiffies;
+	}
+	else {
+		reg_val = chip->last_read_value[off / BANK_SZ];
+	}
 	mutex_unlock(&chip->i2c_lock);
 	if (ret < 0) {
 		/*
@@ -874,6 +886,7 @@ static int pca953x_probe(struct i2c_client *client,
 		chip->gpio_start = pdata->gpio_base;
 		invert = pdata->invert;
 		chip->names = pdata->names;
+		chip->cache_jiffies = pdata->cache_jiffies;
 	} else {
 		struct gpio_desc *reset_gpio;
 
@@ -921,6 +934,15 @@ static int pca953x_probe(struct i2c_client *client,
 		}
 
 		chip->driver_data = (uintptr_t)match;
+	}
+	if (!pdata) {
+	    unsigned cache_jiffies = 0;
+	    if (!of_property_read_u32(client->dev.of_node, "cache-jiffies",
+			    &cache_jiffies)) {
+		chip->cache_jiffies = cache_jiffies;
+	    }
+	    of_property_read_u32(client->dev.of_node, "gpio-start",
+		    &chip->gpio_start);
 	}
 
 	i2c_set_clientdata(client, chip);

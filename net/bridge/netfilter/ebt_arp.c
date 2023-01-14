@@ -54,14 +54,14 @@ ebt_arp_mt(const struct sk_buff *skb, struct xt_action_param *par)
 			return false;
 		if ((info->bitmask & EBT_ARP_SRC_IP) &&
 		    NF_INVF(info, EBT_ARP_SRC_IP,
-			    info->saddr != (*sap & info->smsk)))
+			    info->saddr != (get_unaligned(sap) & info->smsk)))
 			return false;
 		if ((info->bitmask & EBT_ARP_DST_IP) &&
 		    NF_INVF(info, EBT_ARP_DST_IP,
-			    info->daddr != (*dap & info->dmsk)))
+			    info->daddr != (get_unaligned(dap) & info->dmsk)))
 			return false;
 		if ((info->bitmask & EBT_ARP_GRAT) &&
-		    NF_INVF(info, EBT_ARP_GRAT, *dap != *sap))
+		    NF_INVF(info, EBT_ARP_GRAT, get_unaligned(dap) != get_unaligned(sap)))
 			return false;
 	}
 

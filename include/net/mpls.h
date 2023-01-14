@@ -13,7 +13,7 @@
 
 struct mpls_shim_hdr {
 	__be32 label_stack_entry;
-};
+} __attribute__((packed));
 
 static inline bool eth_p_mpls(__be16 eth_type)
 {

@@ -260,6 +260,10 @@ size_t dma_direct_max_mapping_size(struct device *dev);
 
 static inline const struct dma_map_ops *get_dma_ops(struct device *dev)
 {
+	if(!dev) {
+		printk("!!! %s: dev==NULL\n", __func__);
+		BUG();
+	}
 	if (dev->dma_ops)
 		return dev->dma_ops;
 	return get_arch_dma_ops(dev->bus);

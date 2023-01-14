@@ -74,7 +74,7 @@ connmark_tg_shift(struct sk_buff *skb, const struct xt_connmark_tginfo2 *info)
 		skb->mark = newmark;
 		break;
 	}
-	return XT_CONTINUE;
+	return info->passthrough ? XT_CONTINUE : NF_ACCEPT;
 }
 
 static unsigned int
@@ -86,6 +86,7 @@ connmark_tg(struct sk_buff *skb, const struct xt_action_param *par)
 		.ctmask	= info->ctmask,
 		.nfmask	= info->nfmask,
 		.mode	= info->mode,
+		.passthrough = info->passthrough,
 	};
 
 	return connmark_tg_shift(skb, &info2);

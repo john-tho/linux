@@ -3141,8 +3141,8 @@ static int igb_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* copy netdev features into list of user selectable features */
 	netdev->hw_features |= netdev->features |
-			       NETIF_F_HW_VLAN_CTAG_RX |
-			       NETIF_F_HW_VLAN_CTAG_TX |
+//			       NETIF_F_HW_VLAN_CTAG_RX |
+//			       NETIF_F_HW_VLAN_CTAG_TX |
 			       NETIF_F_RXALL;
 
 	if (hw->mac.type >= e1000_i350)
@@ -5455,7 +5455,7 @@ no_wait:
 				  round_jiffies(jiffies +  HZ));
 		else
 			mod_timer(&adapter->watchdog_timer,
-				  round_jiffies(jiffies + 2 * HZ));
+				  round_jiffies(jiffies + HZ));
 	}
 }
 

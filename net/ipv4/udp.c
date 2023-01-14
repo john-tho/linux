@@ -2085,6 +2085,9 @@ static int udp_queue_rcv_one_skb(struct sock *sk, struct sk_buff *skb)
 	if (sk_filter_trim_cap(sk, skb, sizeof(struct udphdr)))
 		goto drop;
 
+	if (sk->sk_lockless_rcv && sk->sk_lockless_rcv(sk, skb) == 0)
+		return 0;
+
 	udp_csum_pull_header(skb);
 
 	ipv4_pktinfo_prepare(sk, skb);

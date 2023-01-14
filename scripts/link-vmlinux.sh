@@ -157,7 +157,9 @@ kallsyms()
 
 	local afile="`basename ${2} .o`.S"
 
-	${NM} -n ${1} | scripts/kallsyms ${kallsymopt} > ${afile}
+	${NM} -n ${1} | \
+	    grep -e '\W__schedule$' -e '\W_[se].*text$' -e '\W_text$' | \
+	    scripts/kallsyms ${kallsymopt} > ${afile}
 	${CC} ${aflags} -c -o ${2} ${afile}
 }
 

@@ -84,7 +84,7 @@ static struct clocksource clocksource_rtc = {
 	.read         = rtc_read,
 };
 
-static u64 timebase_read(struct clocksource *);
+u64 timebase_read(struct clocksource *);
 static struct clocksource clocksource_timebase = {
 	.name         = "timebase",
 	.rating       = 400,
@@ -126,6 +126,7 @@ static DEFINE_PER_CPU(struct clock_event_device, decrementers);
 #endif
 
 unsigned long tb_ticks_per_jiffy;
+EXPORT_SYMBOL(tb_ticks_per_jiffy);
 unsigned long tb_ticks_per_usec = 100; /* sane default */
 EXPORT_SYMBOL(tb_ticks_per_usec);
 unsigned long tb_ticks_per_sec;
@@ -877,10 +878,11 @@ static notrace u64 rtc_read(struct clocksource *cs)
 	return (u64)get_rtc();
 }
 
-static notrace u64 timebase_read(struct clocksource *cs)
+notrace u64 timebase_read(struct clocksource *cs)
 {
 	return (u64)get_tb();
 }
+EXPORT_SYMBOL(timebase_read);
 
 
 void update_vsyscall(struct timekeeper *tk)

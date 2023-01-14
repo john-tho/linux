@@ -550,6 +550,9 @@ static int show_info (struct seq_file *m, struct Scsi_Host *host)
 	seq_printf(m, "     Protocol: %s\n", us->protocol_name);
 	seq_printf(m, "    Transport: %s\n", us->transport_name);
 
+	seq_printf(m, "     VendorID: %04x\n", us->pusb_dev->descriptor.idVendor);
+	seq_printf(m, "     ProductID: %04x\n", us->pusb_dev->descriptor.idProduct);
+
 	/* show the device flags */
 	seq_printf(m, "       Quirks:");
 

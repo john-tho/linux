@@ -184,6 +184,8 @@ struct fsxattr {
 #define BLKSECDISCARD _IO(0x12,125)
 #define BLKROTATIONAL _IO(0x12,126)
 #define BLKZEROOUT _IO(0x12,127)
+#define MAX_VOLNAMESZ	64
+#define BLKVOLNAME  _IOR(0x12,128, char[MAX_VOLNAMESZ])
 /*
  * A jump here: 130-131 are reserved for zoned block devices
  * (see uapi/linux/blkzoned.h)

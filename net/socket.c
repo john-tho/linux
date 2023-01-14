@@ -3314,6 +3314,7 @@ static int compat_ifreq_ioctl(struct net *net, struct socket *sock,
 		case SIOCGIFNETMASK:
 		case SIOCGIFPFLAGS:
 		case SIOCGIFTXQLEN:
+		case SIOCGDEVID:
 		case SIOCGMIIPHY:
 		case SIOCGMIIREG:
 		case SIOCGIFNAME:
@@ -3522,6 +3523,8 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	case SIOCSIFMETRIC:
 	case SIOCGIFMTU:
 	case SIOCSIFMTU:
+	case SIOCSIFL2MTU:
+	case SIOCSIFMPLSMTU:
 	case SIOCGIFMEM:
 	case SIOCSIFMEM:
 	case SIOCGIFHWADDR:
@@ -3543,6 +3546,8 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	case SIOCGIFPFLAGS:
 	case SIOCGIFTXQLEN:
 	case SIOCSIFTXQLEN:
+	case SIOCSDEVID:
+	case SIOCGDEVID:
 	case SIOCBRADDIF:
 	case SIOCBRDELIF:
 	case SIOCGIFNAME:
@@ -3554,6 +3559,7 @@ static int compat_sock_ioctl_trans(struct file *file, struct socket *sock,
 	case SIOCBONDRELEASE:
 	case SIOCBONDSETHWADDR:
 	case SIOCBONDCHANGEACTIVE:
+	case SIOCSPROXYARP:
 		return compat_ifreq_ioctl(net, sock, cmd, argp);
 
 	case SIOCSARP:

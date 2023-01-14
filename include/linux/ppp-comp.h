@@ -81,6 +81,8 @@ struct compressor {
 	struct module *owner;
 	/* Extra skb space needed by the compressor algorithm */
 	unsigned int comp_extra;
+	int lockless;
+	int inplace;
 };
 
 /*

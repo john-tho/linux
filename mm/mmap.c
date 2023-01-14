@@ -637,7 +637,7 @@ __vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
 	__vma_link_rb(mm, vma, rb_link, rb_parent);
 }
 
-static void vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
+int vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
 			struct vm_area_struct *prev, struct rb_node **rb_link,
 			struct rb_node *rb_parent)
 {
@@ -648,6 +648,16 @@ static void vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
 		i_mmap_lock_write(mapping);
 	}
 
+#ifdef CONFIG_HOMECACHE
+	if (mapping) {
+		/* Make sure this mapping doesn't conflict with another. */
+		if (arch_vm_area_validate(vma, mapping) != 0) {
+			i_mmap_unlock_write(mapping);
+			return -EINVAL;
+		}
+	}
+#endif
+
 	__vma_link(mm, vma, prev, rb_link, rb_parent);
 	__vma_link_file(vma);
 
@@ -656,6 +666,7 @@ static void vma_link(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	mm->map_count++;
 	validate_mm(mm);
+	return 0;
 }
 
 /*
@@ -1128,6 +1139,12 @@ struct vm_area_struct *vma_merge(struct mm_struct *mm,
 	if (vm_flags & VM_SPECIAL)
 		return NULL;
 
+#ifdef CONFIG_HOMECACHE
+	/* If we have explicitly marked this vma as DONTMERGE, then don't. */
+	if (vm_flags & VM_DONTMERGE)
+		return NULL;
+#endif
+
 	if (prev)
 		next = prev->vm_next;
 	else
@@ -1540,6 +1557,15 @@ unsigned long do_mmap(struct file *file, unsigned long addr,
 			vm_flags |= VM_NORESERVE;
 	}
 
+#ifdef CONFIG_HOMECACHE
+	/*
+	 * Set VM_DONTMERGE if any homecache state is required,
+	 * to avoid losing it with merges.
+	 */
+	if (current->thread.homecache_prot)
+		vm_flags |= VM_DONTMERGE;
+#endif
+
 	addr = mmap_region(file, addr, len, vm_flags, pgoff, uf);
 	if (!IS_ERR_VALUE(addr) &&
 	    ((vm_flags & VM_LOCKED) ||
@@ -1748,6 +1774,10 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 	vma->vm_flags = vm_flags;
 	vma->vm_page_prot = vm_get_page_prot(vm_flags);
 	vma->vm_pgoff = pgoff;
+#ifdef CONFIG_HOMECACHE
+	if (vma->vm_flags & VM_DONTMERGE)
+		vma->vm_pid = current->thread.homecache_pid;
+#endif
 
 	if (file) {
 		if (vm_flags & VM_DENYWRITE) {
@@ -1790,7 +1820,18 @@ unsigned long mmap_region(struct file *file, unsigned long addr,
 		vma_set_anonymous(vma);
 	}
 
+#ifdef CONFIG_HOMECACHE
+	/*
+	 * We can only test for a valid shared-writable mapping
+	 * that forces home caching when we are holding the locks
+	 * and about to insert the new mapping.
+	 */
+	error = vma_link(mm, vma, prev, rb_link, rb_parent);
+	if (error)
+		goto unmap_and_free_vma;
+#else
 	vma_link(mm, vma, prev, rb_link, rb_parent);
+#endif
 	/* Once vma denies write, undo our temporary denial count */
 	if (file) {
 		if (vm_flags & VM_SHARED)
@@ -2737,6 +2778,12 @@ int __do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	if (vma->vm_start >= end)
 		return 0;
 
+	/* Round end up to huge page size, like we do for small pages. */
+	if (is_vm_hugetlb_page(vma)) {
+		unsigned long pagesize = vma_kernel_pagesize(vma);
+		end = (end + pagesize - 1) & -pagesize;
+	}
+
 	/*
 	 * If we need to split any vma, do it now to save pain later.
 	 *
@@ -3026,6 +3073,12 @@ static int do_brk_flags(unsigned long addr, unsigned long len, unsigned long fla
 	vma->vm_flags = flags;
 	vma->vm_page_prot = vm_get_page_prot(flags);
 	vma_link(mm, vma, prev, rb_link, rb_parent);
+#ifdef CONFIG_HOMECACHE
+	error = arch_vm_area_flags(PROT_READ|PROT_WRITE, MAP_ANONYMOUS);
+	BUG_ON(error != 0);
+	vma->vm_page_prot.val |= current->thread.homecache_prot;
+	current->thread.homecache_prot = 0;
+#endif
 out:
 	perf_event_mmap(vma);
 	mm->total_vm += len >> PAGE_SHIFT;

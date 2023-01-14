@@ -155,11 +155,11 @@ static int host_start(struct ci_hdrc *ci)
 			priv->reg_vbus = ci->platdata->reg_vbus;
 		}
 	}
-
+#if 0
 	if (ci->platdata->pins_host)
 		pinctrl_select_state(ci->platdata->pctl,
 				     ci->platdata->pins_host);
-
+#endif
 	ret = usb_add_hcd(hcd, 0, 0);
 	if (ret) {
 		goto disable_reg;
@@ -210,9 +210,11 @@ static void host_stop(struct ci_hdrc *ci)
 	ci->hcd = NULL;
 	ci->otg.host = NULL;
 
+#if 0
 	if (ci->platdata->pins_host && ci->platdata->pins_default)
 		pinctrl_select_state(ci->platdata->pctl,
 				     ci->platdata->pins_default);
+#endif
 }
 
 

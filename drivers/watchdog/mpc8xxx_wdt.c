@@ -24,7 +24,13 @@
 #include <linux/uaccess.h>
 #include <sysdev/fsl_soc.h>
 
-#define WATCHDOG_TIMEOUT 10
+#define RESET_CAUSE_IOCTL _IO('R', 1)
+
+#define RESET_COLD     0
+#define RESET_WARM     1
+#define RESET_WATCHDOG 2
+
+#define WATCHDOG_TIMEOUT 1
 
 struct mpc8xxx_wdt {
 	__be32 res0;
@@ -52,6 +58,9 @@ struct mpc8xxx_wdt_ddata {
 	spinlock_t lock;
 	u16 swtc;
 };
+
+#define RSR_WDT_RESET 0x8
+static unsigned __iomem *rsr;
 
 static u16 timeout;
 module_param(timeout, ushort, 0);
@@ -112,6 +121,21 @@ static int mpc8xxx_wdt_ping(struct watchdog_device *w)
 	return 0;
 }
 
+static long mpc8xxx_wdt_ioctl(struct watchdog_device *dev,
+			      unsigned cmd, unsigned long arg)
+{
+	if (cmd == RESET_CAUSE_IOCTL) {
+           if (rsr && (in_be32(rsr) & RSR_WDT_RESET)) {
+               out_be32(rsr, in_be32(rsr) | RSR_WDT_RESET);
+               return RESET_WATCHDOG;
+           }
+           else {
+               return RESET_COLD;
+           }
+	}
+	return ENOIOCTLCMD;
+}
+
 static struct watchdog_info mpc8xxx_wdt_info = {
 	.options = WDIOF_KEEPALIVEPING | WDIOF_MAGICCLOSE | WDIOF_SETTIMEOUT,
 	.firmware_version = 1,
@@ -122,6 +146,7 @@ static struct watchdog_ops mpc8xxx_wdt_ops = {
 	.owner = THIS_MODULE,
 	.start = mpc8xxx_wdt_start,
 	.ping = mpc8xxx_wdt_ping,
+	.ioctl = mpc8xxx_wdt_ioctl,
 };
 
 static int mpc8xxx_wdt_probe(struct platform_device *ofdev)
@@ -137,6 +162,19 @@ static int mpc8xxx_wdt_probe(struct platform_device *ofdev)
 	wdt_type = of_device_get_match_data(dev);
 	if (!wdt_type)
 		return -EINVAL;
+
+	{           
+		/* get reset status register */
+		struct device_node *soc = of_find_node_by_type(NULL, "soc");
+		if (soc) {      
+			unsigned int size;
+			static phys_addr_t immrbase = -1;
+			const void *prop = of_get_property(soc, "reg", &size);
+			immrbase = of_translate_address(soc, prop);
+			rsr = (unsigned *) ioremap(immrbase + 0x910, 0x4);
+			of_node_put(soc);
+		}
+	}
 
 	if (!freq || freq == -1)
 		return -EINVAL;
@@ -201,8 +239,11 @@ static int mpc8xxx_wdt_probe(struct platform_device *ofdev)
 		ddata->wdd.timeout = ddata->wdd.min_timeout;
 
 	ret = devm_watchdog_register_device(dev, &ddata->wdd);
-	if (ret)
+	if (ret) {
+		if (rsr)
+			iounmap(rsr);
 		return ret;
+	}
 
 	dev_info(dev,
 		 "WDT driver for MPC8xxx initialized. mode:%s timeout=%d sec\n",

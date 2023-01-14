@@ -64,6 +64,11 @@ struct event_symbol event_symbols_hw[PERF_COUNT_HW_MAX] = {
 		.symbol = "instructions",
 		.alias  = "",
 	},
+#ifndef __tile__
+	/* 
+	 * TILE processors support DCache and ICache profiling indivudally, so
+	 * CACHE_MISSES and CACHE_REFERENCES do not make sense to TILE processors.
+	 */
 	[PERF_COUNT_HW_CACHE_REFERENCES] = {
 		.symbol = "cache-references",
 		.alias  = "",
@@ -72,18 +77,34 @@ struct event_symbol event_symbols_hw[PERF_COUNT_HW_MAX] = {
 		.symbol = "cache-misses",
 		.alias  = "",
 	},
+#endif
+#ifdef __tilegx__
+	/* TILE-Gx does not have a branch instruction counter.  We use the
+	 * branch correctly mispredicted counter here, and modify the
+	 * reporting function appropriately to compute branch mispredict
+	 * rate.
+	 */
+	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS] = {
+		.symbol = "correctly-predicted-branches",
+		.alias  = "branches",
+	},
+#else
 	[PERF_COUNT_HW_BRANCH_INSTRUCTIONS] = {
 		.symbol = "branch-instructions",
 		.alias  = "branches",
 	},
+#endif
 	[PERF_COUNT_HW_BRANCH_MISSES] = {
 		.symbol = "branch-misses",
 		.alias  = "",
 	},
+#ifndef __tile
+	/* TILE processors do not support BUS_CYCLES profiling. */
 	[PERF_COUNT_HW_BUS_CYCLES] = {
 		.symbol = "bus-cycles",
 		.alias  = "",
 	},
+#endif
 	[PERF_COUNT_HW_STALLED_CYCLES_FRONTEND] = {
 		.symbol = "stalled-cycles-frontend",
 		.alias  = "idle-cycles-frontend",

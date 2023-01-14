@@ -117,6 +117,7 @@ static struct sk_buff *red_dequeue(struct Qdisc *sch)
 
 	skb = child->dequeue(child);
 	if (skb) {
+		sch->qstats.backlog -= skb->len;
 		qdisc_bstats_update(sch, skb);
 		qdisc_qstats_backlog_dec(sch, skb);
 		sch->q.qlen--;

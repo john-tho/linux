@@ -210,11 +210,13 @@ static int acct_on(struct filename *pathname)
 		return PTR_ERR(file);
 	}
 
+#if 0
 	if (!S_ISREG(file_inode(file)->i_mode)) {
 		kfree(acct);
 		filp_close(file, NULL);
 		return -EACCES;
 	}
+#endif
 
 	if (!(file->f_mode & FMODE_CAN_WRITE)) {
 		kfree(acct);

@@ -427,8 +427,10 @@ int second_overflow(time64_t secs)
 		} else if (secs == ntp_next_leap_sec) {
 			leap = -1;
 			time_state = TIME_OOP;
+#if 0
 			printk(KERN_NOTICE
 				"Clock: inserting leap second 23:59:60 UTC\n");
+#endif
 		}
 		break;
 	case TIME_DEL:
@@ -439,8 +441,10 @@ int second_overflow(time64_t secs)
 			leap = 1;
 			ntp_next_leap_sec = TIME64_MAX;
 			time_state = TIME_WAIT;
+#if 0
 			printk(KERN_NOTICE
 				"Clock: deleting leap second 23:59:59 UTC\n");
+#endif
 		}
 		break;
 	case TIME_OOP:

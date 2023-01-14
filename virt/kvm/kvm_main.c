@@ -2546,7 +2546,7 @@ bool kvm_vcpu_wake_up(struct kvm_vcpu *vcpu)
 }
 EXPORT_SYMBOL_GPL(kvm_vcpu_wake_up);
 
-#ifndef CONFIG_S390
+#if !defined(CONFIG_S390) && !defined(CONFIG_TILE)
 /*
  * Kick a sleeping VCPU, or a guest VCPU in guest mode, into host kernel mode.
  */

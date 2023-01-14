@@ -321,6 +321,7 @@ static int __init add_legacy_pci_port(struct device_node *np,
 }
 #endif
 
+#if 0
 static void __init setup_legacy_serial_console(int console)
 {
 	struct legacy_serial_info *info = &legacy_serial_infos[console];
@@ -352,6 +353,7 @@ static void __init setup_legacy_serial_console(int console)
 	DBG("default console speed = %d\n", info->speed);
 	udbg_uart_setup(info->speed, info->clock);
 }
+#endif
 
 /*
  * This is called very early, as part of setup_system() or eventually
@@ -444,8 +446,10 @@ void __init find_legacy_serial_ports(void)
 #endif
 
 	DBG("legacy_serial_console = %d\n", legacy_serial_console);
+#if 0
 	if (legacy_serial_console >= 0)
 		setup_legacy_serial_console(legacy_serial_console);
+#endif
 	DBG(" <- find_legacy_serial_port()\n");
 }
 

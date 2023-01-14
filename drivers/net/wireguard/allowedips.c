@@ -9,10 +9,10 @@
 static void swap_endian(u8 *dst, const u8 *src, u8 bits)
 {
 	if (bits == 32) {
-		*(u32 *)dst = be32_to_cpu(*(const __be32 *)src);
+		put_unaligned(get_unaligned_be32((const __be32 *)src), (u32 *)dst);
 	} else if (bits == 128) {
-		((u64 *)dst)[0] = be64_to_cpu(((const __be64 *)src)[0]);
-		((u64 *)dst)[1] = be64_to_cpu(((const __be64 *)src)[1]);
+		put_unaligned(be64_to_cpu((const __be64 *)get_unaligned((const __be64 *)src)), (u64 *)dst);
+		put_unaligned(be64_to_cpu((const __be64 *)get_unaligned((const __be64 *)src) + 1), (u64 *)dst + 1);
 	}
 }
 

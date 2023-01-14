@@ -62,6 +62,10 @@ static int pneigh_ifdown_and_unlock(struct neigh_table *tbl,
 static const struct seq_operations neigh_stat_seq_ops;
 #endif
 
+static atomic_t g_arp_bytes = ATOMIC_INIT(0);
+static unsigned g_arp_bytes_limit = (8 * 1024 * 1024);
+#define ARP_BYTES_PROCFS_NAME "arp_bytes"
+
 /*
    Neighbour hash table buckets are protected with rwlock tbl->lock.
 
@@ -256,7 +260,13 @@ static int neigh_forced_gc(struct neigh_table *tbl)
 static void neigh_add_timer(struct neighbour *n, unsigned long when)
 {
 	neigh_hold(n);
-	if (unlikely(mod_timer(&n->timer, when))) {
+	if (!timer_pending(&n->timer)) {
+	    unsigned cpu = get_random_int() % num_online_cpus();
+	    n->timer.expires = when;
+	    add_timer_on(&n->timer, cpu);
+	}
+	else {
+//	if (unlikely(mod_timer(&n->timer, when))) {
 		printk("NEIGH: BUG, double timer add, state is %x\n",
 		       n->nud_state);
 		dump_stack();
@@ -323,6 +333,8 @@ static void neigh_flush_dev(struct neigh_table *tbl, struct net_device *dev,
 				   it to safe state.
 				 */
 				__skb_queue_purge(&n->arp_queue);
+				atomic_sub(n->arp_queue_len_bytes,
+					&g_arp_bytes);
 				n->arp_queue_len_bytes = 0;
 				n->output = neigh_blackhole;
 				if (n->nud_state & NUD_VALID)
@@ -393,6 +405,9 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl,
 			NEIGH_CACHE_STAT_INC(tbl, table_fulls);
 			goto out_entries;
 		}
+	} else if (entries >= tbl->gc_thresh2 &&
+	     time_after(now, tbl->last_flush + 5 * HZ)) {
+		neigh_forced_gc(tbl);
 	}
 
 do_alloc:
@@ -843,6 +858,7 @@ void neigh_destroy(struct neighbour *neigh)
 	write_lock_bh(&neigh->lock);
 	__skb_queue_purge(&neigh->arp_queue);
 	write_unlock_bh(&neigh->lock);
+	atomic_sub(neigh->arp_queue_len_bytes, &g_arp_bytes);
 	neigh->arp_queue_len_bytes = 0;
 
 	if (dev->netdev_ops->ndo_neigh_destroy)
@@ -994,6 +1010,7 @@ static void neigh_invalidate(struct neighbour *neigh)
 		write_lock(&neigh->lock);
 	}
 	__skb_queue_purge(&neigh->arp_queue);
+	atomic_sub(neigh->arp_queue_len_bytes, &g_arp_bytes);
 	neigh->arp_queue_len_bytes = 0;
 }
 
@@ -1148,12 +1165,15 @@ int __neigh_event_send(struct neighbour *neigh, struct sk_buff *skb)
 	if (neigh->nud_state == NUD_INCOMPLETE) {
 		if (skb) {
 			while (neigh->arp_queue_len_bytes + skb->truesize >
-			       NEIGH_VAR(neigh->parms, QUEUE_LEN_BYTES)) {
+					NEIGH_VAR(neigh->parms, QUEUE_LEN_BYTES)
+					|| atomic_read(&g_arp_bytes) >=
+					g_arp_bytes_limit) {
 				struct sk_buff *buff;
 
 				buff = __skb_dequeue(&neigh->arp_queue);
 				if (!buff)
 					break;
+				atomic_sub(buff->truesize, &g_arp_bytes);
 				neigh->arp_queue_len_bytes -= buff->truesize;
 				kfree_skb(buff);
 				NEIGH_CACHE_STAT_INC(neigh->tbl, unres_discards);
@@ -1161,6 +1181,7 @@ int __neigh_event_send(struct neighbour *neigh, struct sk_buff *skb)
 			skb_dst_force(skb);
 			__skb_queue_tail(&neigh->arp_queue, skb);
 			neigh->arp_queue_len_bytes += skb->truesize;
+			atomic_add(skb->truesize, &g_arp_bytes);
 		}
 		rc = 1;
 	}
@@ -1389,6 +1410,7 @@ static int __neigh_update(struct neighbour *neigh, const u8 *lladdr,
 			write_lock_bh(&neigh->lock);
 		}
 		__skb_queue_purge(&neigh->arp_queue);
+		atomic_sub(neigh->arp_queue_len_bytes, &g_arp_bytes);
 		neigh->arp_queue_len_bytes = 0;
 	}
 out:
@@ -3719,6 +3741,33 @@ EXPORT_SYMBOL(neigh_sysctl_unregister);
 
 #endif	/* CONFIG_SYSCTL */
 
+static ssize_t global_arp_read(struct file *file, char __user *buffer,
+		size_t len, loff_t *pos) {
+	char x[32];
+	sprintf(x, "%u %u\n", g_arp_bytes_limit,
+		atomic_read(&g_arp_bytes));
+	return simple_read_from_buffer(buffer, len, pos, x, strlen(x));
+}
+
+static ssize_t global_arp_write(struct file *file, const char __user *buffer,
+		size_t len, loff_t *pos) {
+	unsigned long val;
+	char x[32];
+	size_t sz = min_t(size_t, len, sizeof(x) - 1);
+	if (copy_from_user(x, buffer, sz)) return -EINVAL;
+	x[sz] = 0;
+
+	if (kstrtoul(x, 0, &val) == 0 && val > 0) {
+		g_arp_bytes_limit = val;
+	}
+	return len;
+}
+
+static struct proc_ops global_arp_ops = {
+	.proc_read = &global_arp_read,
+	.proc_write = &global_arp_write,
+};
+
 static int __init neigh_init(void)
 {
 	rtnl_register(PF_UNSPEC, RTM_NEWNEIGH, neigh_add, NULL, 0);
@@ -3729,6 +3778,8 @@ static int __init neigh_init(void)
 		      0);
 	rtnl_register(PF_UNSPEC, RTM_SETNEIGHTBL, neightbl_set, NULL, 0);
 
+	proc_create_data(ARP_BYTES_PROCFS_NAME, S_IFREG | S_IRUSR | S_IWUSR,
+			NULL, &global_arp_ops, NULL);
 	return 0;
 }
 

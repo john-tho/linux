@@ -606,8 +606,13 @@ static inline void check_stack_overflow(void)
 
 	/* check for stack overflow: is there less than 2KB free? */
 	if (unlikely(sp < 2048)) {
+		static atomic_t cnt;
+		if (atomic_inc_return(&cnt) != 1) {
+			return;
+		}
 		pr_err("do_IRQ: stack overflow: %ld\n", sp);
 		dump_stack();
+		oops_exit(); // added to save backtrace into panic buffer immediately, otherwise this is likely to get lost
 	}
 #endif
 }

@@ -100,15 +100,24 @@ typedef unsigned long old_sigset_t;
 #define __ARCH_HAS_SA_RESTORER
 #endif
 
+#if 0
 #ifndef __KERNEL__
 struct sigaction {
-	__sighandler_t sa_handler;
+	union {
+	  __sighandler_t _sa_handler;
+	  void (*_sa_sigaction)(int, struct siginfo *, void *);
+	} _u;
 	unsigned long sa_flags;
 #ifdef SA_RESTORER
 	__sigrestore_t sa_restorer;
 #endif
 	sigset_t sa_mask;		/* mask last for extensibility */
 };
+
+#define sa_handler	_u._sa_handler
+#define sa_sigaction	_u._sa_sigaction
+
+#endif
 #endif
 
 typedef struct sigaltstack {

@@ -1222,6 +1222,7 @@ struct dwc3 {
 	unsigned		dis_metastability_quirk:1;
 
 	u16			imod_interval;
+	unsigned		disable_ep_cache_eviction_quirk:1;
 };
 
 #define INCRX_BURST_MODE 0

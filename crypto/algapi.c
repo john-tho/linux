@@ -16,6 +16,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <asm/unaligned.h>
 
 #include "internal.h"
 
@@ -987,7 +988,8 @@ void __crypto_xor(u8 *dst, const u8 *src1, const u8 *src2, unsigned int len)
 	}
 
 	while (len >= 4 && !(relalign & 3)) {
-		*(u32 *)dst = *(u32 *)src1 ^ *(u32 *)src2;
+		put_unaligned(get_unaligned((u32 *)src1) ^ get_unaligned((u32 *)src2),
+			      (u32 *)dst);
 		dst += 4;
 		src1 += 4;
 		src2 += 4;
@@ -995,7 +997,8 @@ void __crypto_xor(u8 *dst, const u8 *src1, const u8 *src2, unsigned int len)
 	}
 
 	while (len >= 2 && !(relalign & 1)) {
-		*(u16 *)dst = *(u16 *)src1 ^ *(u16 *)src2;
+		put_unaligned(get_unaligned((u16 *)src1) ^ get_unaligned((u16 *)src2),
+			      (u16 *)dst);
 		dst += 2;
 		src1 += 2;
 		src2 += 2;

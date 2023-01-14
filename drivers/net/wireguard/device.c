@@ -10,6 +10,9 @@
 #include "ratelimiter.h"
 #include "peer.h"
 #include "messages.h"
+#include "logger.h"
+
+#include <uapi/linux/wireguard.h>
 
 #include <linux/module.h>
 #include <linux/rtnetlink.h>
@@ -247,6 +250,7 @@ static void wg_destruct(struct net_device *dev)
 	mutex_unlock(&wg->device_update_lock);
 
 	pr_debug("%s: Interface deleted\n", dev->name);
+	wg_log(WGLOG_LEVEL_DEBUG, dev, NULL, "Interface deleted");
 	free_netdev(dev);
 }
 
@@ -361,6 +365,7 @@ static int wg_newlink(struct net *src_net, struct net_device *dev,
 	dev->priv_destructor = wg_destruct;
 
 	pr_debug("%s: Interface created\n", dev->name);
+	wg_log(WGLOG_LEVEL_DEBUG, dev, NULL, "Interface created");
 	return ret;
 
 err_uninit_ratelimiter:

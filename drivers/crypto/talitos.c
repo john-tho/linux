@@ -345,6 +345,7 @@ static void flush_channel(struct device *dev, int ch, int error, int reset_ch)
 	unsigned long flags;
 	int tail, status;
 	bool is_sec1 = has_ftr_sec1(priv);
+	int released = 0;
 
 	spin_lock_irqsave(&priv->chan[ch].tail_lock, flags);
 
@@ -384,18 +385,20 @@ static void flush_channel(struct device *dev, int ch, int error, int reset_ch)
 
 		spin_unlock_irqrestore(&priv->chan[ch].tail_lock, flags);
 
-		atomic_dec(&priv->chan[ch].submit_count);
+		++released;
 
 		saved_req.callback(dev, saved_req.desc, saved_req.context,
 				   status);
 		/* channel may resume processing in single desc error case */
 		if (error && !reset_ch && status == error)
-			return;
+			break;
 		spin_lock_irqsave(&priv->chan[ch].tail_lock, flags);
 		tail = priv->chan[ch].tail;
 	}
 
 	spin_unlock_irqrestore(&priv->chan[ch].tail_lock, flags);
+
+	atomic_sub(released, &priv->chan[ch].submit_count);
 }
 
 /*
@@ -464,6 +467,7 @@ static u32 current_desc_hdr(struct device *dev, int ch)
 {
 	struct talitos_private *priv = dev_get_drvdata(dev);
 	int tail, iter;
+	struct talitos_desc *desc;
 	dma_addr_t cur_desc;
 
 	cur_desc = ((u64)in_be32(priv->chan[ch].reg + TALITOS_CDPR)) << 32;
@@ -3098,7 +3102,7 @@ static int talitos_remove(struct platform_device *ofdev)
 		list_del(&t_alg->entry);
 	}
 
-	if (hw_supports(dev, DESC_HDR_SEL0_RNG))
+	if (hw_supports(dev, DESC_HDR_SEL0_RNG) && priv->rng.priv)
 		talitos_unregister_rng(dev);
 
 	for (i = 0; i < 2; i++)
@@ -3414,6 +3418,7 @@ static int talitos_probe(struct platform_device *ofdev)
 		err = talitos_register_rng(dev);
 		if (err) {
 			dev_err(dev, "failed to register hwrng: %d\n", err);
+			priv->rng.priv = 0;
 			goto err_out;
 		} else
 			dev_info(dev, "hwrng\n");

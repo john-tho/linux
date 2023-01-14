@@ -31,7 +31,7 @@ static inline void serial_out(int offset, char value)
 	writeb(value, serial8250_base + (offset << serial8250_reg_shift));
 }
 
-void prom_putchar(char c)
+void serial8250_prom_putchar(char c)
 {
 	unsigned int timeout;
 	int status, bits;

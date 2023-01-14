@@ -19,8 +19,9 @@ static u8 mux_get_parent(struct clk_hw *hw)
 {
 	struct clk_regmap_mux *mux = to_clk_regmap_mux(hw);
 	struct clk_regmap *clkr = to_clk_regmap(hw);
+	int num_parents = clk_hw_get_num_parents(hw);
 	unsigned int mask = GENMASK(mux->width - 1, 0);
-	unsigned int val;
+	unsigned int val, i;
 
 	regmap_read(clkr->regmap, mux->reg, &val);
 

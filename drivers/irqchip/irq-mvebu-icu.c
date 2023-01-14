@@ -41,6 +41,9 @@
 #define ICU_SATA0_ICU_ID	109
 #define ICU_SATA1_ICU_ID	107
 
+/* AP810 ICU entries from CP110 are consecutive */
+#define ICU_GIC_SPI_AP810_BASE		160
+
 struct mvebu_icu_subset_data {
 	unsigned int icu_group;
 	unsigned int offset_set_ah;
@@ -52,6 +55,7 @@ struct mvebu_icu_subset_data {
 struct mvebu_icu {
 	void __iomem *base;
 	struct device *dev;
+	atomic_t initialized;
 };
 
 struct mvebu_icu_msi_data {
@@ -102,6 +106,27 @@ static void mvebu_icu_write_msg(struct msi_desc *desc, struct msi_msg *msg)
 		mvebu_icu_init(icu, msi_data, msg);
 		/* Configure the ICU with irq number & type */
 		icu_int = msg->data | ICU_INT_ENABLE;
+		/*
+		 * identify if it's a CP110 connected to AP810 or CP110
+		 * connected to AP806, since they differ in relevance to how
+		 * they are connected to AP GIC entries.
+		 * ICU interrupts in AP806 are written to GIC-P,
+		 * by writing only source ID, than the GIC-P remaps these
+		 * interrupt IDs, according to AP806 GIC assignments:
+		 * - 0-31 : PPI/SGI
+		 * - 32-64: AP interrupts
+		 * So the remap was done internally by HW.
+		 *
+		 * For AP810, there is no GIC-P in between, and the ICU writes
+		 * the message directly to the GIC, so the differences are:
+		 * 1. AP810 GIC has 92 interrupt entries, pre-assigned to:
+		 * 0-31 : PPI/SGI
+		 * 32-92: AP interrupts
+		 * 2. ICU need to write message ID directly to GIC, hence it
+		 * should also increase the GIC entries ID by 92, by SW
+		 */
+		if (of_machine_is_compatible("marvell,armada-ap810"))
+			icu_int += ICU_GIC_SPI_AP810_BASE;
 		if (icu_irqd->type & IRQ_TYPE_EDGE_RISING)
 			icu_int |= ICU_IS_EDGE;
 		icu_int |= icu_irqd->icu_group << ICU_GROUP_SHIFT;

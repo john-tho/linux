@@ -1290,7 +1290,7 @@ static bool tcp_shifted_skb(struct sock *sk, struct sk_buff *prev,
 	u32 start_seq = TCP_SKB_CB(skb)->seq;	/* start of newly-SACKed */
 	u32 end_seq = start_seq + shifted;	/* end of newly-SACKed */
 
-	BUG_ON(!pcount);
+	WARN_ON_ONCE(tcp_skb_pcount(skb) < pcount);
 
 	/* Adjust counters and hints for the newly sacked sequence
 	 * range but discard the return value since prev is already
@@ -3963,14 +3963,15 @@ static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr
 {
 	const __be32 *ptr = (const __be32 *)(th + 1);
 
-	if (*ptr == htonl((TCPOPT_NOP << 24) | (TCPOPT_NOP << 16)
+	if (get_unaligned_be32(ptr) == htonl((TCPOPT_NOP << 24) | (TCPOPT_NOP << 16)
 			  | (TCPOPT_TIMESTAMP << 8) | TCPOLEN_TIMESTAMP)) {
 		tp->rx_opt.saw_tstamp = 1;
 		++ptr;
-		tp->rx_opt.rcv_tsval = ntohl(*ptr);
+		tp->rx_opt.rcv_tsval = ntohl(get_unaligned(ptr));
 		++ptr;
-		if (*ptr)
-			tp->rx_opt.rcv_tsecr = ntohl(*ptr) - tp->tsoffset;
+		if (get_unaligned_be32(ptr))
+			tp->rx_opt.rcv_tsecr =
+				get_unaligned_be32(ptr) - tp->tsoffset;
 		else
 			tp->rx_opt.rcv_tsecr = 0;
 		return true;

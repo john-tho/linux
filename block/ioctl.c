@@ -583,6 +583,15 @@ static int blkdev_bszset(struct block_device *bdev, fmode_t mode,
 	return ret;
 }
 
+static int blkdev_get_volname(struct block_device *bdev, int __user *argp)
+{
+#define MIN(a, b)	((a) > (b) ? (a) : (b))
+	int ret = copy_to_user((char *)argp, bdev->bd_part->info->volname,
+			MIN(MAX_VOLNAMESZ, PARTITION_META_INFO_VOLNAMELTH));
+
+	return 0;
+}
+
 /*
  * Common commands that are handled the same way on native and compat
  * user space. Note the separate arg/argp parameters that are needed
@@ -660,6 +669,8 @@ static int blkdev_common_ioctl(struct block_device *bdev, fmode_t mode,
 		return blkdev_pr_preempt(bdev, argp, true);
 	case IOC_PR_CLEAR:
 		return blkdev_pr_clear(bdev, argp);
+	case BLKVOLNAME:
+		return blkdev_get_volname(bdev, argp);
 	default:
 		return -ENOIOCTLCMD;
 	}

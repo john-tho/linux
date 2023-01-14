@@ -70,12 +70,12 @@ struct message_header {
 	 * we achieve the same thing, and it makes checking faster.
 	 */
 	__le32 type;
-};
+} __attribute__((packed));
 
 struct message_macs {
 	u8 mac1[COOKIE_LEN];
 	u8 mac2[COOKIE_LEN];
-};
+} __attribute__((packed));
 
 struct message_handshake_initiation {
 	struct message_header header;
@@ -84,7 +84,7 @@ struct message_handshake_initiation {
 	u8 encrypted_static[noise_encrypted_len(NOISE_PUBLIC_KEY_LEN)];
 	u8 encrypted_timestamp[noise_encrypted_len(NOISE_TIMESTAMP_LEN)];
 	struct message_macs macs;
-};
+} __attribute__((packed));
 
 struct message_handshake_response {
 	struct message_header header;
@@ -93,21 +93,21 @@ struct message_handshake_response {
 	u8 unencrypted_ephemeral[NOISE_PUBLIC_KEY_LEN];
 	u8 encrypted_nothing[noise_encrypted_len(0)];
 	struct message_macs macs;
-};
+} __attribute__((packed));
 
 struct message_handshake_cookie {
 	struct message_header header;
 	__le32 receiver_index;
 	u8 nonce[COOKIE_NONCE_LEN];
 	u8 encrypted_cookie[noise_encrypted_len(COOKIE_LEN)];
-};
+} __attribute__((packed));
 
 struct message_data {
 	struct message_header header;
 	__le32 key_idx;
 	__le64 counter;
 	u8 encrypted_data[];
-};
+} __attribute__((packed));
 
 #define message_data_len(plain_len) \
 	(noise_encrypted_len(plain_len) + sizeof(struct message_data))

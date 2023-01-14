@@ -10,6 +10,9 @@
 #include <linux/hardirq.h>
 
 #include <asm/cacheflush.h>
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
 
 #ifndef ARCH_HAS_FLUSH_ANON_PAGE
 static inline void flush_anon_page(struct vm_area_struct *vma, struct page *page, unsigned long vmaddr)
@@ -183,8 +186,14 @@ __alloc_zeroed_user_highpage(gfp_t movableflags,
 			struct vm_area_struct *vma,
 			unsigned long vaddr)
 {
+#ifdef CONFIG_HOMECACHE
+	struct page *page =
+		homecache_alloc_page_vma(GFP_HIGHUSER | movableflags,
+			vma, vaddr);
+#else
 	struct page *page = alloc_page_vma(GFP_HIGHUSER | movableflags,
 			vma, vaddr);
+#endif
 
 	if (page)
 		clear_user_highpage(page, vaddr);
@@ -219,7 +228,18 @@ static inline void zero_user_segments(struct page *page,
 	unsigned start1, unsigned end1,
 	unsigned start2, unsigned end2)
 {
-	void *kaddr = kmap_atomic(page);
+	void *kaddr;
+
+#ifdef CONFIG_HOMECACHE
+	/*
+	 * Invoked during page writeout to guarantee partial pages
+	 * are properly zeroed; sometimes this can be for pages that
+	 * are currently immutable in memory.
+	 */
+	homecache_make_writable(page, 0);
+#endif
+
+	kaddr = kmap_atomic(page);
 
 	BUG_ON(end1 > PAGE_SIZE || end2 > PAGE_SIZE);
 

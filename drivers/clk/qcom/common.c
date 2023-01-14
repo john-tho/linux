@@ -26,6 +26,7 @@ struct qcom_cc {
 const
 struct freq_tbl *qcom_find_freq(const struct freq_tbl *f, unsigned long rate)
 {
+	const struct freq_tbl *start = f;
 	if (!f)
 		return NULL;
 
@@ -33,8 +34,8 @@ struct freq_tbl *qcom_find_freq(const struct freq_tbl *f, unsigned long rate)
 		return f;
 
 	for (; f->freq; f++)
-		if (rate <= f->freq)
-			return f;
+		if (rate < f->freq)
+			return (f == start) ? f : f - 1;
 
 	/* Default to our fastest rate */
 	return f - 1;

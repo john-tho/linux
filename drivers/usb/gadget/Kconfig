@@ -168,7 +168,6 @@ config USB_F_SERIAL
 config USB_F_OBEX
 	tristate
 
-config USB_F_NCM
 	tristate
 
 config USB_F_ECM

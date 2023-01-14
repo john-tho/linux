@@ -18,6 +18,7 @@ struct nf_conn;
 struct nf_ct_gre_keymap {
 	struct list_head list;
 	struct nf_conntrack_tuple tuple;
+	struct nf_ct_gre_keymap **kmp;
 	struct rcu_head rcu;
 };
 

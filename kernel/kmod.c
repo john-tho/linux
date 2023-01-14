@@ -124,6 +124,7 @@ out:
  */
 int __request_module(bool wait, const char *fmt, ...)
 {
+#if 0
 	va_list args;
 	char module_name[MODULE_NAME_LEN];
 	int ret;
@@ -174,5 +175,8 @@ int __request_module(bool wait, const char *fmt, ...)
 	wake_up(&kmod_wq);
 
 	return ret;
+#else
+	return -EINVAL;
+#endif
 }
 EXPORT_SYMBOL(__request_module);

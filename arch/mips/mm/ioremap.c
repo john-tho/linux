@@ -13,10 +13,17 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/idr.h>
+#include <linux/hardirq.h>
 #include <linux/mm_types.h>
 #include <asm/cacheflush.h>
 #include <asm/io.h>
 #include <asm/tlbflush.h>
+
+#define ATOMIC_AREA_SIZE	512
+
+static DEFINE_IDA(atomic_mapping);
+struct vm_struct *atomic_area;
 
 static inline void remap_area_pte(pte_t * pte, unsigned long address,
 	phys_addr_t size, phys_addr_t phys_addr, unsigned long flags)
@@ -103,6 +110,7 @@ static int remap_area_pages(unsigned long address, phys_addr_t phys_addr,
 	return error;
 }
 
+#ifndef CONFIG_MAPPED_KERNEL
 static int __ioremap_check_ram(unsigned long start_pfn, unsigned long nr_pages,
 			       void *arg)
 {
@@ -116,6 +124,7 @@ static int __ioremap_check_ram(unsigned long start_pfn, unsigned long nr_pages,
 
 	return 0;
 }
+#endif
 
 /*
  * Generic mapping function (not visible outside):
@@ -135,7 +144,10 @@ static int __ioremap_check_ram(unsigned long start_pfn, unsigned long nr_pages,
 
 void __iomem * __ioremap(phys_addr_t phys_addr, phys_addr_t size, unsigned long flags)
 {
-	unsigned long offset, pfn, last_pfn;
+	unsigned long offset;
+#ifndef CONFIG_MAPPED_KERNEL
+	unsigned long pfn, last_pfn;
+#endif	
 	struct vm_struct * area;
 	phys_addr_t last_addr;
 	void * addr;
@@ -147,6 +159,7 @@ void __iomem * __ioremap(phys_addr_t phys_addr, phys_addr_t size, unsigned long 
 	if (!size || last_addr < phys_addr)
 		return NULL;
 
+#ifndef CONFIG_MAPPED_KERNEL
 	/*
 	 * Map uncached objects in the low 512mb of address space using KSEG1,
 	 * otherwise map using page tables.
@@ -167,6 +180,7 @@ void __iomem * __ioremap(phys_addr_t phys_addr, phys_addr_t size, unsigned long 
 			  &phys_addr, &last_addr);
 		return NULL;
 	}
+#endif
 
 	/*
 	 * Mappings have to be page-aligned
@@ -175,6 +189,17 @@ void __iomem * __ioremap(phys_addr_t phys_addr, phys_addr_t size, unsigned long 
 	phys_addr &= PAGE_MASK;
 	size = PAGE_ALIGN(last_addr + 1) - phys_addr;
 
+	if (in_interrupt()) {
+		int pg = -1;
+
+		if (size <= PAGE_SIZE)
+			pg = ida_simple_get(&atomic_mapping, 0, ATOMIC_AREA_SIZE,
+					    GFP_ATOMIC);
+		if (pg < 0)
+			return (void __iomem *) (offset + (UNCAC_BASE | phys_addr));
+
+		addr = atomic_area->addr + (pg << PAGE_SHIFT);
+	} else {
 	/*
 	 * Ok, go for it..
 	 */
@@ -182,6 +207,7 @@ void __iomem * __ioremap(phys_addr_t phys_addr, phys_addr_t size, unsigned long 
 	if (!area)
 		return NULL;
 	addr = area->addr;
+	}
 	if (remap_area_pages((unsigned long) addr, phys_addr, size, flags)) {
 		vunmap(addr);
 		return NULL;
@@ -199,6 +225,18 @@ void __iounmap(const volatile void __iomem *addr)
 	if (IS_KSEG1(addr))
 		return;
 
+	if (atomic_area && addr >= atomic_area->addr &&
+	    addr < atomic_area->addr + atomic_area->size) {
+		extern void vunmap_page_range(unsigned long addr, unsigned long end);
+
+		unsigned long vaddr = (unsigned long) addr & PAGE_MASK;
+		unsigned long off = addr - atomic_area->addr;
+
+		ida_simple_remove(&atomic_mapping, off >> PAGE_SHIFT);
+		vunmap_page_range(vaddr, vaddr + PAGE_SIZE);
+		return;
+	}
+
 	p = remove_vm_area((void *) (PAGE_MASK & (unsigned long __force) addr));
 	if (!p)
 		printk(KERN_ERR "iounmap: bad address %p\n", addr);
@@ -208,3 +246,11 @@ void __iounmap(const volatile void __iomem *addr)
 
 EXPORT_SYMBOL(__ioremap);
 EXPORT_SYMBOL(__iounmap);
+
+static int __init init_ioremap(void)
+{
+	atomic_area = get_vm_area(ATOMIC_AREA_SIZE * PAGE_SIZE, VM_IOREMAP);
+
+	return 0;
+}
+fs_initcall(init_ioremap);

@@ -223,6 +223,7 @@ static int smp_85xx_start_cpu(int cpu)
 	if (qoriq_pm_ops)
 		qoriq_pm_ops->cpu_up_prepare(cpu);
 
+#ifndef CONFIG_RB1120	
 	/* if cpu is not spinning, reset it */
 	if (read_spin_table_addr_l(spin_table) != 1) {
 		/*
@@ -245,6 +246,11 @@ static int smp_85xx_start_cpu(int cpu)
 			goto err;
 		}
 	}
+#else	
+	/* this hack is needed to support older RB1100AHx2 bootloaders */
+	out_be32(&spin_table->addr_l, __pa(__early_start));
+	if (0) goto err;
+#endif	
 
 	flush_spin_table(spin_table);
 	out_be32(&spin_table->pir, hw_cpu);

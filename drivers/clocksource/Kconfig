@@ -13,6 +13,9 @@ config TIMER_ACPI
 config TIMER_PROBE
 	bool
 
+config CLKSRC_OF
+	bool
+
 config CLKSRC_I8253
 	bool
 

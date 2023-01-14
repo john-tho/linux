@@ -417,33 +417,12 @@ void ctrl_alt_del(void)
 }
 
 char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
-static const char reboot_cmd[] = "/sbin/reboot";
-
-static int run_cmd(const char *cmd)
-{
-	char **argv;
-	static char *envp[] = {
-		"HOME=/",
-		"PATH=/sbin:/bin:/usr/sbin:/usr/bin",
-		NULL
-	};
-	int ret;
-	argv = argv_split(GFP_KERNEL, cmd, NULL);
-	if (argv) {
-		ret = call_usermodehelper(argv[0], argv, envp, UMH_WAIT_EXEC);
-		argv_free(argv);
-	} else {
-		ret = -ENOMEM;
-	}
-
-	return ret;
-}
 
 static int __orderly_reboot(void)
 {
 	int ret;
 
-	ret = run_cmd(reboot_cmd);
+	ret = kill_cad_pid(SIGINT, 1);
 
 	if (ret) {
 		pr_warn("Failed to start orderly reboot: forcing the issue\n");
@@ -458,7 +437,7 @@ static int __orderly_poweroff(bool force)
 {
 	int ret;
 
-	ret = run_cmd(poweroff_cmd);
+	ret = kill_cad_pid(SIGWINCH, 1);
 
 	if (ret && force) {
 		pr_warn("Failed to start orderly shutdown: forcing the issue\n");

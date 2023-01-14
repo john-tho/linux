@@ -39,6 +39,7 @@
 #include <linux/sunrpc/svcsock.h>
 #include <linux/sunrpc/xprtsock.h>
 #include <linux/file.h>
+#include <asm/unaligned.h>
 #ifdef CONFIG_SUNRPC_BACKCHANNEL
 #include <linux/sunrpc/bc_xprt.h>
 #endif
@@ -1388,7 +1389,7 @@ static void xs_udp_data_read_skb(struct rpc_xprt *xprt,
 
 	/* Look up and lock the request corresponding to the given XID */
 	spin_lock(&xprt->queue_lock);
-	rovr = xprt_lookup_rqst(xprt, *xp);
+	rovr = xprt_lookup_rqst(xprt, get_unaligned(xp));
 	if (!rovr)
 		goto out_unlock;
 	xprt_pin_rqst(rovr);

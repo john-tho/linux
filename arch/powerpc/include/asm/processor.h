@@ -110,7 +110,7 @@ struct debug_reg {
 	 */
 	uint32_t	dbcr0;
 	uint32_t	dbcr1;
-#ifdef CONFIG_BOOKE
+#if defined(CONFIG_BOOKE) || defined(CONFIG_RB_PPC)
 	uint32_t	dbcr2;
 #endif
 	/*
@@ -128,15 +128,19 @@ struct debug_reg {
 	 */
 	unsigned long	iac1;
 	unsigned long	iac2;
+#ifdef CONFIG_PPC_ADV_DEBUG_IACS
 #if CONFIG_PPC_ADV_DEBUG_IACS > 2
 	unsigned long	iac3;
 	unsigned long	iac4;
 #endif
+#endif
 	unsigned long	dac1;
 	unsigned long	dac2;
+#ifdef CONFIG_PPC_ADV_DEBUG_DVCS
 #if CONFIG_PPC_ADV_DEBUG_DVCS > 0
 	unsigned long	dvc1;
 	unsigned long	dvc2;
+#endif
 #endif
 #endif
 };
@@ -149,7 +153,7 @@ struct thread_struct {
 #endif
 	struct pt_regs	*regs;		/* Pointer to saved register state */
 	mm_segment_t	addr_limit;	/* for get_fs() validation */
-#ifdef CONFIG_BOOKE
+#if defined(CONFIG_BOOKE) || defined(CONFIG_RB_PPC)
 	/* BookE base exception scratch space; align on cacheline */
 	unsigned long	normsave[8] ____cacheline_aligned;
 #endif
@@ -242,7 +246,7 @@ struct thread_struct {
 #ifdef CONFIG_KVM_BOOK3S_32_HANDLER
 	void*		kvm_shadow_vcpu; /* KVM internal data */
 #endif /* CONFIG_KVM_BOOK3S_32_HANDLER */
-#if defined(CONFIG_KVM) && defined(CONFIG_BOOKE)
+#if defined(CONFIG_KVM) && (defined(CONFIG_BOOKE) || defined(CONFIG_RB_PPC))
 	struct kvm_vcpu	*kvm_vcpu;
 #endif
 #ifdef CONFIG_PPC64

@@ -19,7 +19,9 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
+#include <linux/mm.h>
 #include <linux/jump_label.h>
+#include <linux/kmemleak.h>
 
 #include <asm/pgtable.h>	/* MODULE_START */
 
@@ -32,14 +34,196 @@ struct mips_hi16 {
 static LIST_HEAD(dbe_list);
 static DEFINE_SPINLOCK(dbe_lock);
 
-#ifdef MODULE_START
+static void *alloc_phys(unsigned long size)
+{
+	unsigned order;
+	struct page *page;
+	struct page *p;
+
+	size = PAGE_ALIGN(size);
+	order = get_order(size);
+
+	page = alloc_pages(
+		GFP_KERNEL | __GFP_NORETRY | __GFP_NOWARN | __GFP_THISNODE,
+		order);
+	if (!page)
+		return 0;
+
+	split_page(page, order);
+
+	for (p = page + (size >> PAGE_SHIFT); p < page + (1 << order); ++p)
+		__free_page(p);
+
+	return page_address(page);
+}
+
+static void free_phys(void *ptr, unsigned long size)
+{
+	struct page *page;
+	struct page *end;
+
+	page = virt_to_page(ptr);
+	end = page + (PAGE_ALIGN(size) >> PAGE_SHIFT);
+
+	for (; page < end; ++page)
+		__free_pages(page, 0);
+}
+
 void *module_alloc(unsigned long size)
 {
+#ifdef MODULE_START
 	return __vmalloc_node_range(size, 1, MODULE_START, MODULE_END,
 				GFP_KERNEL, PAGE_KERNEL, 0, NUMA_NO_NODE,
 				__builtin_return_address(0));
-}
+#else
+	unsigned addr;
+	void *ptr;
+
+	size = PAGE_ALIGN(size);
+	if (size == 0)
+		return NULL;
+
+	ptr = alloc_phys(size);
+	if (ptr) {
+		kmemleak_alloc(ptr, size, 3, GFP_KERNEL | __GFP_HIGHMEM);
+		return ptr;
+	}
+
+	/* try to allocate contiguos chunk of memory not spanning 256Mb
+	   range, so all jump instructions can work */
+	addr = VMALLOC_START;
+	while (addr < VMALLOC_END) {
+		unsigned end = ALIGN(addr + 1, 1u << 28);
+
+		if (addr + size <= end) {
+			struct vm_struct *area
+				= __get_vm_area(size, VM_ALLOC, addr, end);
+
+			if (area) {
+				return __vmalloc_node_range(
+				    size, 1, addr, end,
+				    GFP_KERNEL, PAGE_KERNEL, -1, NUMA_NO_NODE,
+				    __builtin_return_address(0));
+			}
+		}
+		addr = end;
+	}
+	return NULL;
 #endif
+}
+
+static inline int is_phys(void *ptr)
+{
+	unsigned addr = (unsigned) ptr;
+	return addr && (addr < VMALLOC_START || addr > VMALLOC_END);
+}
+
+/* Free memory returned from module_alloc */
+void module_memfree(void *module_region, unsigned size)
+{
+	if (is_phys(module_region)) {
+		free_phys(module_region, size);
+		return;
+	}
+
+	vfree(module_region);
+}
+
+/* Get the potential trampolines size required of the init and
+   non-init sections */
+static unsigned get_plt_size(const Elf32_Ehdr *hdr,
+			     const Elf32_Shdr *sechdrs,
+			     const char *secstrings,
+			     unsigned symindex,
+			     int is_init)
+{
+	unsigned long ret = 0;
+	unsigned i, j;
+	Elf_Sym *syms;
+
+	/* Everything marked ALLOC (this includes the exported symbols) */
+	for (i = 1; i < hdr->e_shnum; ++i) {
+		unsigned int info = sechdrs[i].sh_info;
+
+		if (sechdrs[i].sh_type != SHT_REL
+		    && sechdrs[i].sh_type != SHT_RELA)
+			continue;
+
+		/* Not a valid relocation section? */
+		if (info >= hdr->e_shnum)
+			continue;
+
+		/* Don't bother with non-allocated sections */
+		if (!(sechdrs[info].sh_flags & SHF_ALLOC))
+			continue;
+
+		/* If it's called *.init*, and we're not init, we're
+                   not interested */
+		if ((strstr(secstrings + sechdrs[i].sh_name, ".init") != 0)
+		    != is_init)
+			continue;
+
+		syms = (Elf_Sym *) sechdrs[symindex].sh_addr;
+		if (sechdrs[i].sh_type == SHT_REL) {
+			Elf_Mips_Rel *rel = (void *) sechdrs[i].sh_addr;
+			unsigned size = sechdrs[i].sh_size / sizeof(*rel);
+
+			for (j = 0; j < size; ++j) {
+				Elf_Sym *sym;
+
+				if (ELF_MIPS_R_TYPE(rel[j]) != R_MIPS_26)
+					continue;
+				sym = syms + ELF_MIPS_R_SYM(rel[j]);
+				if (!is_init && sym->st_shndx != SHN_UNDEF)
+					continue;
+
+				ret += sizeof(unsigned[4]);
+			}
+		} else {
+			Elf_Mips_Rela *rela = (void *) sechdrs[i].sh_addr;
+			unsigned size = sechdrs[i].sh_size / sizeof(*rela);
+
+			for (j = 0; j < size; ++j) {
+				Elf_Sym *sym;
+
+				if (ELF_MIPS_R_TYPE(rela[j]) != R_MIPS_26)
+					continue;
+				sym = syms + ELF_MIPS_R_SYM(rela[j]);
+				if (!is_init && sym->st_shndx != SHN_UNDEF)
+					continue;
+
+				ret += sizeof(unsigned[4]);
+			}
+		}
+
+	}
+
+	return ret;
+}
+
+int module_relayout(Elf32_Ehdr *hdr,
+		    Elf32_Shdr *sechdrs,
+		    char *secstrings,
+		    unsigned symindex,
+		    struct module *me)
+{
+	unsigned core_plt_size = get_plt_size(
+	    hdr, sechdrs, secstrings, symindex, 0);
+	unsigned init_plt_size = get_plt_size(
+	    hdr, sechdrs, secstrings, symindex, 1);
+
+	if (core_plt_size > 0)
+		me->core_layout.size = PAGE_ALIGN(me->core_layout.size);
+	me->arch.core_plt_offset = me->core_layout.size;
+	me->core_layout.size += core_plt_size;
+
+	if (init_plt_size > 0)
+		me->init_layout.size = ALIGN(me->init_layout.size, 4);
+	me->arch.init_plt_offset = me->init_layout.size;
+	me->init_layout.size += init_plt_size;
+
+	return 0;
+}
 
 static int apply_r_mips_none(struct module *me, u32 *location,
 			     u32 base, Elf_Addr v, bool rela)
@@ -55,6 +239,44 @@ static int apply_r_mips_32(struct module *me, u32 *location,
 	return 0;
 }
 
+static Elf_Addr add_plt_entry_to(unsigned *plt_offset,
+				 void *start, unsigned size, Elf_Addr v)
+{
+	unsigned *tramp = start + *plt_offset;
+	if (*plt_offset == size) return 0;
+
+	*plt_offset += sizeof(unsigned[4]);
+
+	/* adjust carry for addiu */
+	if (v & 0x00008000) 
+		v += 0x10000;
+	
+	tramp[0] = 0x3c190000 | (v >> 16);	/* lui t9, hi16 */
+	tramp[1] = 0x27390000 | (v & 0xffff);	/* addiu t9, t9, lo16 */
+	tramp[2] = 0x03200008;			/* jr t9 */
+	tramp[3] = 0x00000000;			/* nop */
+	
+	return (Elf_Addr) tramp;
+}
+
+static Elf_Addr add_plt_entry(struct module *me, void *location, Elf_Addr v)
+{
+	if (within_module_core((unsigned long) location, me)) {
+		return add_plt_entry_to(
+		    &me->arch.core_plt_offset,
+		    me->core_layout.base, me->core_layout.size, v);
+	} else if (within_module_init((unsigned long) location, me)) {
+		return add_plt_entry_to(
+		    &me->arch.init_plt_offset,
+		    me->init_layout.base, me->init_layout.size, v);
+	} else {
+		printk(KERN_ERR "module %s: "
+		       "relocation to unknown segment %u\n",
+		       me->name, v);
+	}
+	return 0;
+}
+
 static int apply_r_mips_26(struct module *me, u32 *location,
 			   u32 base, Elf_Addr v, bool rela)
 {
@@ -65,9 +287,16 @@ static int apply_r_mips_26(struct module *me, u32 *location,
 	}
 
 	if ((v & 0xf0000000) != (((unsigned long)location + 4) & 0xf0000000)) {
+		v = add_plt_entry(me, location,
+				  v + ((*location & 0x03ffffff) << 2));
+		if (v == 0) {
 		pr_err("module %s: relocation overflow\n",
 		       me->name);
 		return -ENOEXEC;
+	}
+		*location = (*location & ~0x03ffffff) |
+			    ((v >> 2) & 0x03ffffff);
+		return 0;
 	}
 
 	*location = (*location & ~0x03ffffff) |
@@ -446,6 +675,14 @@ int module_finalize(const Elf_Ehdr *hdr,
 		spin_lock_irq(&dbe_lock);
 		list_add(&me->arch.dbe_list, &dbe_list);
 		spin_unlock_irq(&dbe_lock);
+	}
+
+	if (me->arch.core_plt_offset < me->core_layout.size
+	    && PAGE_ALIGN(me->arch.core_plt_offset) == me->arch.core_plt_offset
+	    && is_phys(me->core_layout.base)) {
+		free_phys(me->core_layout.base + me->arch.core_plt_offset,
+			  me->core_layout.size - me->arch.core_plt_offset);
+		me->core_layout.size = me->arch.core_plt_offset;
 	}
 	return 0;
 }

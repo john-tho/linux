@@ -1,0 +1,72 @@
+/dts-v1/;
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "wAP 2GR ac";
+
+	leds {
+		compatible = "leds-rb";
+		led1 {
+			gpios = <&tlmm 4 GPIO_ACTIVE_LOW>;
+		};
+		led2 {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+		};
+		usb-power-off {
+			gpios = <&tlmm 2 GPIO_ACTIVE_LOW>;
+		};
+		user-led {
+			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		};
+		power-led {
+			gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		button {
+			gpios = <&tlmm 64 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+};
+
+&edma {
+	port_map = <4 3(-1)>;
+};
+
+&tlmm {
+	ts_cs_pin: ts_cs_pin_pinmux {
+		mux {
+			pins = "gpio1";
+			function = "gpio";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&spi_0 {
+	num-cs = <2>;
+	cs-gpios = <0>, <&tlmm 1 GPIO_ACTIVE_LOW>;
+
+	spi-ts@1 {
+		pinctrl-0 = <&ts_cs_pin>;
+		pinctrl-names = "default";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "rb-spi-ts";
+		spi-max-frequency = <1000000>;
+		reg = <1>;
+	};
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&usb3_ss_phy {
+	status = "ok";
+};
+
+&usb3_hs_phy {
+	status = "ok";
+};

@@ -9,6 +9,7 @@
 #include "queueing.h"
 #include "ratelimiter.h"
 #include "netlink.h"
+#include "logger.h"
 
 #include <uapi/linux/wireguard.h>
 
@@ -26,6 +27,7 @@ static int __init mod_init(void)
 	    !wg_ratelimiter_selftest())
 		return -ENOTRECOVERABLE;
 #endif
+	wg_logger_init();
 	wg_noise_init();
 
 	ret = wg_device_init();
@@ -51,6 +53,7 @@ static void __exit mod_exit(void)
 {
 	wg_genetlink_uninit();
 	wg_device_uninit();
+	wg_logger_uninit();
 }
 
 module_init(mod_init);

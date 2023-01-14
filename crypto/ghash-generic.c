@@ -159,6 +159,7 @@ static struct shash_alg ghash_alg = {
 		.cra_driver_name	= "ghash-generic",
 		.cra_priority		= 100,
 		.cra_blocksize		= GHASH_BLOCK_SIZE,
+		.cra_alignmask		= __alignof__(u32) - 1,
 		.cra_ctxsize		= sizeof(struct ghash_ctx),
 		.cra_module		= THIS_MODULE,
 		.cra_exit		= ghash_exit_tfm,

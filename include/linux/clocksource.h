@@ -249,6 +249,10 @@ static inline void clocksource_arch_init(struct clocksource *cs) { }
 
 extern int timekeeping_notify(struct clocksource *clock);
 
+extern int timekeeping_chfreq_prep(struct clocksource *clock, u64 *start_cycle);
+extern void timekeeping_chfreq(unsigned int freq, u64 end_cycle,
+			       u64 delta_ns);
+
 extern u64 clocksource_mmio_readl_up(struct clocksource *);
 extern u64 clocksource_mmio_readl_down(struct clocksource *);
 extern u64 clocksource_mmio_readw_up(struct clocksource *);
@@ -270,5 +274,11 @@ static inline void timer_probe(void) {}
 
 #define TIMER_ACPI_DECLARE(name, table_id, fn)		\
 	ACPI_DECLARE_PROBE_ENTRY(timer, name, table_id, 0, NULL, 0, fn)
+
+#ifdef CONFIG_CLKSRC_OF
+extern void clocksource_of_init(void);
+#else
+static inline void clocksource_of_init(void) {}
+#endif
 
 #endif /* _LINUX_CLOCKSOURCE_H */

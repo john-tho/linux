@@ -513,4 +513,24 @@ config EXYNOS_IRQ_COMBINER
 	  Say yes here to add support for the IRQ combiner devices embedded
 	  in Samsung Exynos chips.
 
+config QTI_PDC
+	bool "QTI PDC"
+	depends on ARCH_QCOM
+	select IRQ_DOMAIN
+	select IRQ_DOMAIN_HIERARCHY
+	help
+	  QTI Power Domain Controller driver to manage and configure wakeup
+	  IRQs
+
+config QTI_PDC_SDXPRAIRIE
+	bool "QTI PDC SDXPRAIRIE"
+	select QTI_PDC
+	depends on ARCH_QCOM
+	default y if ARCH_SDXPRAIRIE
+	help
+	  QTI Power Domain Controller for SDXPRAIRIE
+	  This is used for managing and configuring
+	  the wakeup interrupts. Enable it when
+	  ARCH_SDXPRAIRIE is selected.
+
 endmenu

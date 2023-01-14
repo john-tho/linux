@@ -193,4 +193,23 @@ enum wgallowedip_attribute {
 };
 #define WGALLOWEDIP_A_MAX (__WGALLOWEDIP_A_LAST - 1)
 
+#define WGLOG_GENL_NAME "wglog"
+#define WGLOG_GENL_VERSION 1
+
+enum wglog_attribute {
+        WGLOG_A_UNSPEC,
+        WGLOG_A_MESSAGE,
+        WGLOG_A_DEV_IFNAME,
+        WGLOG_A_DEV_IFINDEX,
+        WGLOG_A_PEER_PUBLIC_KEY,
+        WGLOG_A_LEVEL,
+        __WGLOG_A_MAX
+};
+#define WGLOG_A_MAX (__WGLOG_A_MAX - 1)
+
+enum wglog_level {
+        WGLOG_LEVEL_DEBUG,
+        WGLOG_LEVEL_ERROR
+};
+
 #endif /* _WG_UAPI_WIREGUARD_H */

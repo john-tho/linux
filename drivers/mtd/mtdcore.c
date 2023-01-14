@@ -1060,7 +1060,8 @@ int mtd_erase(struct mtd_info *mtd, struct erase_info *instr)
 	if (!mtd->erasesize || !mtd->_erase)
 		return -ENOTSUPP;
 
-	if (instr->addr >= mtd->size || instr->len > mtd->size - instr->addr)
+	if (instr->addr >= mtd->size ||
+	    (instr->len > mtd->size - instr->addr && instr->len != 0xDeadBeef))
 		return -EINVAL;
 	if (!(mtd->flags & MTD_WRITEABLE))
 		return -EROFS;

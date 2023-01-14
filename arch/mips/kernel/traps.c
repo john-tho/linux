@@ -106,6 +106,11 @@ void (*board_bind_eic_interrupt)(int irq, int regset);
 void (*board_ebase_setup)(void);
 void(*board_cache_error_setup)(void);
 
+#ifdef CONFIG_KALLSYMS
+int raw_show_trace;
+#endif
+
+#ifdef CONFIG_RAWBACKTRACE
 static void show_raw_backtrace(unsigned long reg29)
 {
 	unsigned long *sp = (unsigned long *)(reg29 & ~3);
@@ -129,7 +134,6 @@ static void show_raw_backtrace(unsigned long reg29)
 }
 
 #ifdef CONFIG_KALLSYMS
-int raw_show_trace;
 static int __init set_raw_show_trace(char *str)
 {
 	raw_show_trace = 1;
@@ -158,6 +162,73 @@ static void show_backtrace(struct task_struct *task, const struct pt_regs *regs)
 	} while (pc);
 	pr_cont("\n");
 }
+
+#else
+
+
+static int bt_iters(unsigned long pc, unsigned long sp) {
+	unsigned long spp = sp;
+	int i = 0;
+	while (pc) {
+		pc = find_prev_frame(pc, 0, &spp, 0);
+		++i;
+	}
+	return i;
+}
+
+static void show_backtrace(struct task_struct *task, const struct pt_regs *regs)
+{
+	unsigned long sp = regs->regs[29];
+	unsigned long ra = regs->regs[31];
+	unsigned long pc = regs->cp0_epc;
+	int depth = 50;
+	int c;
+	int best_count;
+	unsigned long bpc;
+	unsigned long bsp;
+
+	printk("Call Trace:\n");
+	while (depth-- && pc) {
+		printk("{%08lx} %pS\n", sp, (void *)pc);
+		pc = find_prev_frame(pc, ra, &sp, 0);
+		ra = 0;
+
+		if (pc) {
+			continue;
+		}
+		best_count = 0;
+		bpc = 0;
+		bsp = 0;
+		while (!kstack_end((unsigned long *)sp)) {
+			sp += sizeof(void *);
+			if (__get_user(pc, (unsigned long __user *)sp)) {
+				pc = 0;
+				break;
+			}
+			if (!__kernel_text_address(pc)) {
+				pc = 0;
+				continue;
+			}
+			c = bt_iters(pc, sp + 4);
+			if (c > 1 && c > best_count) {
+				best_count = c;
+				bpc = pc;
+				bsp = sp + 4;
+			}
+			if (c > 4) {
+				break;
+			}
+			pc = 0;
+		}
+		pc = bpc;
+		sp = bsp;
+		if (pc) {
+			printk("more trace (sp:%lx):\n", sp);
+		}
+	}
+	printk("\n");
+}
+#endif
 
 /*
  * This routine abuses get_user()/put_user() to reference pointers
@@ -376,6 +447,7 @@ void show_registers(struct pt_regs *regs)
 	printk("\n");
 	set_fs(old_fs);
 }
+EXPORT_SYMBOL_GPL(show_registers);
 
 static DEFINE_RAW_SPINLOCK(die_lock);
 
@@ -390,6 +462,7 @@ void __noreturn die(const char *str, struct pt_regs *regs)
 		       SIGSEGV) == NOTIFY_STOP)
 		sig = 0;
 
+	oops_enter();
 	console_verbose();
 	raw_spin_lock_irq(&die_lock);
 	bust_spinlocks(1);
@@ -1948,7 +2021,7 @@ void __init *set_except_vector(int n, void *addr)
 #endif
 		u32 *buf = (u32 *)(ebase + 0x200);
 		unsigned int k0 = 26;
-		if ((handler & jump_mask) == ((ebase + 0x200) & jump_mask)) {
+		if ((handler & jump_mask) == ((KSEG0ADDR(ebase) + 0x200) & jump_mask)) {
 			uasm_i_j(&buf, handler & ~jump_mask);
 			uasm_i_nop(&buf);
 		} else {
@@ -2189,6 +2262,7 @@ void per_cpu_trap_init(bool is_boot_cpu)
 	 *  o read IntCtl.IPPCI to determine the performance counter interrupt
 	 *  o read IntCtl.IPFDC to determine the fast debug channel interrupt
 	 */
+#ifdef CONFIG_CPU_MIPSR2
 	if (cpu_has_mips_r2_r6) {
 		cp0_compare_irq_shift = CAUSEB_TI - CAUSEB_IP;
 		cp0_compare_irq = (read_c0_intctl() >> INTCTLB_IPTI) & 7;
@@ -2198,11 +2272,18 @@ void per_cpu_trap_init(bool is_boot_cpu)
 			cp0_fdc_irq = -1;
 
 	} else {
+#endif
 		cp0_compare_irq = CP0_LEGACY_COMPARE_IRQ;
 		cp0_compare_irq_shift = CP0_LEGACY_PERFCNT_IRQ;
 		cp0_perfcount_irq = -1;
 		cp0_fdc_irq = -1;
+#ifdef CONFIG_CPU_MIPSR2
 	}
+#endif
+
+#ifdef CONFIG_MIPS_MIKROTIK
+	cp0_compare_irq = CP0_LEGACY_COMPARE_IRQ;
+#endif
 
 	if (cpu_has_mmid)
 		cpu_data[cpu].asid_cache = 0;

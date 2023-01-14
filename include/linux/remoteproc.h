@@ -488,6 +488,7 @@ struct rproc {
 	const char *name;
 	char *firmware;
 	void *priv;
+	struct rproc *parent;
 	struct rproc_ops *ops;
 	struct device dev;
 	atomic_t power;
@@ -514,6 +515,12 @@ struct rproc {
 	bool auto_boot;
 	struct list_head dump_segments;
 	int nb_vdev;
+	struct list_head child;
+};
+
+struct rproc_child {
+	struct list_head node;
+	void *handle;
 };
 
 /**
@@ -634,5 +641,9 @@ static inline struct rproc *vdev_to_rproc(struct virtio_device *vdev)
 void rproc_add_subdev(struct rproc *rproc, struct rproc_subdev *subdev);
 
 void rproc_remove_subdev(struct rproc *rproc, struct rproc_subdev *subdev);
+
+void rproc_add_child(struct rproc *rproc_p, struct rproc_child *child);
+
+void rproc_remove_child(struct rproc *rproc_p, struct rproc_child *child);
 
 #endif /* REMOTEPROC_H */

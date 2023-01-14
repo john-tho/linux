@@ -69,7 +69,6 @@ static unsigned int ipv4_conntrack_defrag(void *priv,
 		return NF_ACCEPT;
 
 #if IS_ENABLED(CONFIG_NF_CONNTRACK)
-#if !IS_ENABLED(CONFIG_NF_NAT)
 	/* Previously seen (loopback)?  Ignore.  Do this before
 	   fragment check. */
 	if (skb_nfct(skb) && !nf_ct_is_template((struct nf_conn *)skb_nfct(skb)))
@@ -77,7 +76,6 @@ static unsigned int ipv4_conntrack_defrag(void *priv,
 #endif
 	if (skb->_nfct == IP_CT_UNTRACKED)
 		return NF_ACCEPT;
-#endif
 	/* Gather fragments. */
 	if (ip_is_fragment(ip_hdr(skb))) {
 		enum ip_defrag_users user =
@@ -119,6 +117,7 @@ static struct pernet_operations defrag4_net_ops = {
 
 static int __init nf_defrag_init(void)
 {
+	nf_defrag_ipv4_enable(&init_net);
 	return register_pernet_subsys(&defrag4_net_ops);
 }
 

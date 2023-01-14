@@ -12,6 +12,16 @@ config REMOTEPROC
 	  Support for remote processors (such as DSP coprocessors). These
 	  are mainly used on embedded systems.
 
+config IPQ807X_REMOTEPROC
+	tristate "IPQ807x Q6-WCSS rproc support"
+	depends on REMOTEPROC && QCOM_SMP2P
+	select IPQ_SUBSYTEM_DUMP
+	help
+	  Say y here to support IPQ807x q6v5 wcss remote processors
+	  via the remote processor framework. Q6v5 WCSS are DSP remote
+	  processors. They need reset and loading of firmware for them
+	  to run. This config enables drivers to do that.
+
 if REMOTEPROC
 
 config IMX_REMOTEPROC
@@ -166,6 +176,10 @@ config QCOM_Q6V5_WCSS
 	help
 	  Say y here to support the Qualcomm Peripheral Image Loader for the
 	  Hexagon V5 based WCSS remote processors.
+
+config QCOM_Q6V5_IPA_NOTIFY
+	tristate "IPA notify"
+	depends on QCOM_Q6V5_MSS
 
 config QCOM_SYSMON
 	tristate "Qualcomm sysmon driver"

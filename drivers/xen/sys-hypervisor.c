@@ -515,6 +515,53 @@ static int __init xen_sysfs_pmu_init(void)
 }
 #endif
 
+
+struct shutdown_mode {
+	const char *name;
+	int mode;
+};
+
+static struct shutdown_mode shutdown_modes[] = {
+	{"soft_reset", SHUTDOWN_soft_reset},
+	{"crash", SHUTDOWN_crash},
+	{"reboot", SHUTDOWN_reboot}
+};
+
+extern int xen_hvm_crash_shutdown_mode;
+
+static ssize_t crash_shutdown_mode_store(struct hyp_sysfs_attr *attr,
+					 const char *buffer, size_t len)
+{
+	int i;
+
+	if (len < 5) return -EINVAL;
+
+	for (i = 0; i < ARRAY_SIZE(shutdown_modes); i++) {
+		if (strncmp(buffer, shutdown_modes[i].name, len - 1) == 0) {
+			xen_hvm_crash_shutdown_mode = shutdown_modes[i].mode;
+			return len;
+		}
+	}
+
+	return -EINVAL;
+}
+
+static ssize_t crash_shutdown_mode_show(struct hyp_sysfs_attr *attr, char *buffer)
+{
+	int i;
+	for (i = 0; i < ARRAY_SIZE(shutdown_modes); i++) {
+		if (xen_hvm_crash_shutdown_mode == shutdown_modes[i].mode)
+			return sprintf(buffer, "%s\n", shutdown_modes[i].name);
+	}
+	return -EINVAL;
+}
+HYPERVISOR_ATTR_RW(crash_shutdown_mode);
+
+static int __init xen_sysfs_crash_shutdown_mode_init(void)
+{
+	return sysfs_create_file(hypervisor_kobj, &crash_shutdown_mode_attr.attr);
+}
+
 static int __init hyper_sysfs_init(void)
 {
 	int ret;
@@ -531,6 +578,9 @@ static int __init hyper_sysfs_init(void)
 	ret = xen_sysfs_version_init();
 	if (ret)
 		goto version_out;
+	ret = xen_sysfs_crash_shutdown_mode_init();
+	if (ret)
+		goto crash_shutdown_out;
 	ret = xen_sysfs_compilation_init();
 	if (ret)
 		goto comp_out;
@@ -540,6 +590,7 @@ static int __init hyper_sysfs_init(void)
 	ret = xen_sysfs_properties_init();
 	if (ret)
 		goto prop_out;
+
 #ifdef CONFIG_XEN_HAVE_VPMU
 	if (xen_initial_domain()) {
 		ret = xen_sysfs_pmu_init();
@@ -558,6 +609,8 @@ uuid_out:
 	sysfs_remove_group(hypervisor_kobj, &xen_compilation_group);
 comp_out:
 	sysfs_remove_group(hypervisor_kobj, &version_group);
+crash_shutdown_out:
+	sysfs_remove_file(hypervisor_kobj, &crash_shutdown_mode_attr.attr);
 version_out:
 	sysfs_remove_file(hypervisor_kobj, &guest_type_attr.attr);
 guest_type_out:

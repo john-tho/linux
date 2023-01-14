@@ -26,7 +26,7 @@
 
 #define A3700_SPI_MAX_SPEED_HZ		100000000
 #define A3700_SPI_MAX_PRESCALE		30
-#define A3700_SPI_TIMEOUT		10
+#define A3700_SPI_TIMEOUT		100
 
 /* SPI Register Offest */
 #define A3700_SPI_IF_CTRL_REG		0x00
@@ -830,9 +830,8 @@ static int a3700_spi_probe(struct platform_device *pdev)
 	}
 
 	if (of_property_read_u32(of_node, "num-cs", &num_cs)) {
-		dev_err(dev, "could not find num-cs\n");
-		ret = -ENXIO;
-		goto error;
+		dev_err(dev, "could not find num-cs, assuming 4\n");
+		num_cs = 4;
 	}
 
 	master->bus_num = pdev->id;

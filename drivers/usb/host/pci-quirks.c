@@ -96,11 +96,15 @@
 #define USB_INTEL_USB3PRM      0xDC
 
 /* ASMEDIA quirk use */
+#define ASMT_DATA_READ0_REG	0xF0
+#define ASMT_DATA_READ1_REG	0xF4
 #define ASMT_DATA_WRITE0_REG	0xF8
 #define ASMT_DATA_WRITE1_REG	0xFC
 #define ASMT_CONTROL_REG	0xE0
-#define ASMT_CONTROL_WRITE_BIT	0x02
+#define ASMT_CTRL_WRITE_BIT	0x02
+#define ASMT_CTRL_READ_BIT	0x01
 #define ASMT_WRITEREG_CMD	0x10423
+#define ASMT_READREG_CMD	0x10440
 #define ASMT_FLOWCTL_ADDR	0xFA30
 #define ASMT_FLOWCTL_DATA	0xBA
 #define ASMT_PSEUDO_DATA	0
@@ -457,7 +461,7 @@ void usb_amd_quirk_pll_disable(void)
 }
 EXPORT_SYMBOL_GPL(usb_amd_quirk_pll_disable);
 
-static int usb_asmedia_wait_write(struct pci_dev *pdev)
+static int usb_asmedia_wait(struct pci_dev *pdev, int bit, int is_set)
 {
 	unsigned long retry_count;
 	unsigned char value;
@@ -471,7 +475,7 @@ static int usb_asmedia_wait_write(struct pci_dev *pdev)
 			return -EIO;
 		}
 
-		if ((value & ASMT_CONTROL_WRITE_BIT) == 0)
+		if ((value & bit) == is_set)
 			return 0;
 
 		udelay(50);
@@ -481,23 +485,58 @@ static int usb_asmedia_wait_write(struct pci_dev *pdev)
 	return -ETIMEDOUT;
 }
 
+static int usb_asmedia_wait_write(struct pci_dev *pdev) {
+	return usb_asmedia_wait(pdev, ASMT_CTRL_WRITE_BIT, 0);
+}
+
+static int usb_asmedia_wait_read(struct pci_dev *pdev) {
+	return usb_asmedia_wait(pdev, ASMT_CTRL_READ_BIT, ASMT_CTRL_READ_BIT);
+}
+
+static void usb_asmedia_set_ctrl(struct pci_dev *pdev, u32 bit) {
+	unsigned char value;
+	pci_read_config_byte(pdev, ASMT_CONTROL_REG, &value);
+	pci_write_config_byte(pdev, ASMT_CONTROL_REG, value | bit);
+}
+
+static void usb_asmedia_write(struct pci_dev *pdev, u32 r0, u32 r1) {
+	if (usb_asmedia_wait_write(pdev) != 0) return;
+
+	pci_write_config_dword(pdev, ASMT_DATA_WRITE0_REG, r0);
+	pci_write_config_dword(pdev, ASMT_DATA_WRITE1_REG, r1);
+	usb_asmedia_set_ctrl(pdev, ASMT_CTRL_WRITE_BIT);
+}
+
+static void usb_asmedia_write_reg(struct pci_dev *pdev, u32 reg, u32 val) {
+	usb_asmedia_write(pdev, ASMT_WRITEREG_CMD, reg);
+	usb_asmedia_write(pdev, val, ASMT_PSEUDO_DATA);
+}
+
+static u32 usb_asmedia_read(struct pci_dev *pdev) {
+	u32 val, noval;
+	if (usb_asmedia_wait_read(pdev) != 0) return 0;
+
+	pci_read_config_dword(pdev, ASMT_DATA_READ0_REG, &val);
+	pci_read_config_dword(pdev, ASMT_DATA_READ1_REG, &noval);
+	usb_asmedia_set_ctrl(pdev, ASMT_CTRL_READ_BIT);
+	return val;
+}
+
+static u32 usb_asmedia_read_reg(struct pci_dev *pdev, u32 reg) {
+	usb_asmedia_write(pdev, ASMT_READREG_CMD, reg);
+	usb_asmedia_write(pdev, 0x0, ASMT_PSEUDO_DATA);
+	usb_asmedia_read(pdev);
+	return usb_asmedia_read(pdev);
+}
+
+void usb_asmedia_mod_reg(struct pci_dev *pdev, u32 reg, u32 set, u32 clr) {
+	u32 val = usb_asmedia_read_reg(pdev, reg);
+	usb_asmedia_write_reg(pdev, reg, (val & ~clr) | set);
+}
+
 void usb_asmedia_modifyflowcontrol(struct pci_dev *pdev)
 {
-	if (usb_asmedia_wait_write(pdev) != 0)
-		return;
-
-	/* send command and address to device */
-	pci_write_config_dword(pdev, ASMT_DATA_WRITE0_REG, ASMT_WRITEREG_CMD);
-	pci_write_config_dword(pdev, ASMT_DATA_WRITE1_REG, ASMT_FLOWCTL_ADDR);
-	pci_write_config_byte(pdev, ASMT_CONTROL_REG, ASMT_CONTROL_WRITE_BIT);
-
-	if (usb_asmedia_wait_write(pdev) != 0)
-		return;
-
-	/* send data to device */
-	pci_write_config_dword(pdev, ASMT_DATA_WRITE0_REG, ASMT_FLOWCTL_DATA);
-	pci_write_config_dword(pdev, ASMT_DATA_WRITE1_REG, ASMT_PSEUDO_DATA);
-	pci_write_config_byte(pdev, ASMT_CONTROL_REG, ASMT_CONTROL_WRITE_BIT);
+	usb_asmedia_write_reg(pdev, ASMT_FLOWCTL_ADDR, ASMT_FLOWCTL_DATA);
 }
 EXPORT_SYMBOL_GPL(usb_asmedia_modifyflowcontrol);
 

@@ -216,6 +216,7 @@ enum {
 	MDBA_UNSPEC,
 	MDBA_MDB,
 	MDBA_ROUTER,
+	MDBA_IGMP,
 	__MDBA_MAX,
 };
 #define MDBA_MAX (__MDBA_MAX - 1)
@@ -265,6 +266,15 @@ enum {
 	__MDBA_ROUTER_PATTR_MAX
 };
 #define MDBA_ROUTER_PATTR_MAX (__MDBA_ROUTER_PATTR_MAX - 1)
+
+enum {
+	MDBA_IGMP_UNSPEC,
+	MDBA_IGMP_PCKT,
+	MDBA_IGMP_PORT,
+	MDBA_IGMP_VID,
+	__MDBA_IGMP_MAX,
+};
+#define MDBA_IGMP_MAX (__MDBA_IGMP_MAX - 1)
 
 struct br_port_msg {
 	__u8  family;

@@ -5,18 +5,64 @@
 #include <linux/types.h>
 #include <linux/netlink.h>
 
+struct rtnl_link_compact_stats {
+	__u32 rx_packets;
+	__u32 tx_packets;
+	__u64 rx_bytes;
+	__u64 tx_bytes;
+	__u32 rx_drops;
+	__u32 tx_drops;
+	__u32 rx_errors;
+	__u32 tx_errors;
+	__u32 fp_rx_packets;
+	__u32 fp_tx_packets;
+	__u64 fp_rx_bytes;
+	__u64 fp_tx_bytes;
+	__u32 tx_queue_drops;
+} __attribute__((packed));
+
+struct rtnl_link_compact {
+	unsigned char	ifi_family;
+	unsigned char	__ifi_pad;
+	unsigned short	ifi_type;
+	int		index;
+	unsigned	flags;
+	unsigned	change;
+
+	unsigned short addr_len;
+	unsigned short addr_type;
+	unsigned char addr[8];
+
+	unsigned short name_len;
+	unsigned short name_type;
+	char name[16];
+
+	unsigned short rest_len;
+	unsigned short rest_type;
+	unsigned mtu;
+	unsigned short l2mtu;
+	unsigned short mplsmtu;
+	unsigned priv_flags;
+	struct rtnl_link_compact_stats stats;
+} __attribute__((packed));
+
 /* This struct should be in sync with struct rtnl_link_stats64 */
 struct rtnl_link_stats {
 	__u32	rx_packets;		/* total packets received	*/
 	__u32	tx_packets;		/* total packets transmitted	*/
-	__u32	rx_bytes;		/* total bytes received 	*/
-	__u32	tx_bytes;		/* total bytes transmitted	*/
+	__u64	rx_bytes;		/* total bytes received 	*/
+	__u64	tx_bytes;		/* total bytes transmitted	*/
 	__u32	rx_errors;		/* bad packets received		*/
 	__u32	tx_errors;		/* packet transmit problems	*/
 	__u32	rx_dropped;		/* no space in linux buffers	*/
 	__u32	tx_dropped;		/* no space available in linux	*/
 	__u32	multicast;		/* multicast packets received	*/
 	__u32	collisions;
+
+	__u32	fp_rx_packets;
+	__u32	fp_tx_packets;
+	__u64	fp_rx_bytes;
+	__u64	fp_tx_bytes;
 
 	/* detailed rx_errors: */
 	__u32	rx_length_errors;
@@ -73,7 +119,7 @@ struct rtnl_link_stats64 {
 	__u64	tx_compressed;
 
 	__u64	rx_nohandler;		/* dropped, no handler found	*/
-};
+} __packed;
 
 /* The struct should be in sync with struct ifmap */
 struct rtnl_link_ifmap {
@@ -170,6 +216,10 @@ enum {
 	IFLA_PROP_LIST,
 	IFLA_ALT_IFNAME, /* Alternative ifname */
 	IFLA_PERM_ADDRESS,
+
+	IFLA_L2MTU,
+	IFLA_MPLSMTU,
+	IFLA_PRIV_FLAGS,
 	__IFLA_MAX
 };
 
@@ -343,6 +393,7 @@ enum {
 	IFLA_BRPORT_NEIGH_SUPPRESS,
 	IFLA_BRPORT_ISOLATED,
 	IFLA_BRPORT_BACKUP_PORT,
+	IFLA_BRPORT_VLAN_DEF_STATE,
 	__IFLA_BRPORT_MAX
 };
 #define IFLA_BRPORT_MAX (__IFLA_BRPORT_MAX - 1)
@@ -998,6 +1049,21 @@ enum {
 	IFLA_EVENT_IGMP_RESEND,		/* re-sent IGMP JOIN */
 	IFLA_EVENT_BONDING_OPTIONS,	/* change in bonding options */
 };
+
+enum {
+	IFLA_PW_UNSPEC,
+	IFLA_PW_FLAGS,
+	__IFLA_PW_MAX
+};
+
+#define IFLA_PW_MAX (__IFLA_PW_MAX - 1)
+
+#define PW_FLAGS_RXCW		(1U << 0)
+#define PW_FLAGS_RXORD		(1U << 1)
+#define PW_FLAGS_RXDEFRAG	(1U << 2)
+#define PW_FLAGS_TXCW		(1U << 3)
+#define PW_FLAGS_TXSEQ		(1U << 4)
+#define PW_FLAGS_TXFRAG		(1U << 5)
 
 /* tun section */
 

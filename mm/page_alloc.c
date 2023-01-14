@@ -72,6 +72,9 @@
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
 #include "internal.h"
 #include "shuffle.h"
 
@@ -1423,7 +1426,19 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 	migratetype = get_pfnblock_migratetype(page, pfn);
 	local_irq_save(flags);
 	__count_vm_events(PGFREE, 1 << order);
+#ifdef CONFIG_HOMECACHE
+	if (homecache_check_free_page(page, order)) {
+		VM_BUG_ON_PAGE(page->flags & PAGE_FLAGS_CHECK_AT_PREP, page);
+		homecache_keep_free_page(page, order);
+		goto out;
+	}
+#endif
+
 	free_one_page(page_zone(page), page, pfn, order, migratetype);
+
+#ifdef CONFIG_HOMECACHE
+out:
+#endif
 	local_irq_restore(flags);
 }
 
@@ -2149,6 +2164,9 @@ inline void post_alloc_hook(struct page *page, unsigned int order,
 	kasan_alloc_pages(page, order);
 	kernel_poison_pages(page, 1 << order, 1);
 	set_page_owner(page, order, gfp_flags);
+#ifdef CONFIG_HOMECACHE
+	homecache_new_kernel_page(page, order);
+#endif
 }
 
 static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags,
@@ -3040,6 +3058,13 @@ static void free_unref_page_commit(struct page *page, unsigned long pfn)
 		migratetype = MIGRATE_MOVABLE;
 	}
 
+#ifdef CONFIG_HOMECACHE
+	if (homecache_check_free_page(page, 0)) {
+		homecache_keep_free_page(page, 0);
+		return;
+	}
+#endif
+
 	pcp = &this_cpu_ptr(zone->pageset)->pcp;
 	list_add(&page->lru, &pcp->lists[migratetype]);
 	pcp->count++;
@@ -3236,9 +3261,19 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	unsigned long flags;
 
 	local_irq_save(flags);
+#ifdef CONFIG_HOMECACHE
+	page = homecache_get_cached_page(zone, gfp_flags);
+	if (page)
+		goto got_pg;
+#endif
+
 	pcp = &this_cpu_ptr(zone->pageset)->pcp;
 	list = &pcp->lists[migratetype];
 	page = __rmqueue_pcplist(zone,  migratetype, alloc_flags, pcp, list);
+	
+#ifdef CONFIG_HOMECACHE
+got_pg:
+#endif
 	if (page) {
 		__count_zid_vm_events(PGALLOC, page_zonenum(page), 1);
 		zone_statistics(preferred_zone, zone);
@@ -3658,6 +3693,14 @@ retry:
 			if (node_reclaim_mode == 0 ||
 			    !zone_allows_reclaim(ac->preferred_zoneref->zone, zone))
 				continue;
+
+#ifdef CONFIG_HOMECACHE
+                        if (homecache_recover_free_pages_zone(zone) &&
+                                zone_watermark_ok(zone, order, mark,
+						  ac_classzone_idx(ac), alloc_flags))
+                                goto try_this_zone;
+
+#endif
 
 			ret = node_reclaim(zone->zone_pgdat, gfp_mask, order);
 			switch (ret) {
@@ -4252,6 +4295,38 @@ bool gfp_pfmemalloc_allowed(gfp_t gfp_mask)
 	return !!__gfp_pfmemalloc_flags(gfp_mask);
 }
 
+#ifdef CONFIG_HOMECACHE
+/*
+ * Called recursively while allocating, to provide a higher-order
+ * page that we can then shatter and map with small TLB entries
+ * so we can tweak their homecache.  Called with the zone lock held.
+ */
+struct page *homecache_rmqueue(struct zone *zone, int order, int migratetype,
+			       gfp_t gfp_flags)
+{
+	int i;
+	struct page *page;
+
+	page = __rmqueue(zone, order, migratetype, gfp_to_alloc_flags(gfp_flags));
+	if (unlikely(page == NULL))
+		return NULL;
+
+	__mod_zone_page_state(zone, NR_FREE_PAGES, -(1UL << order));
+
+	/* Split into individual pages */
+	set_page_refcounted(page);
+	split_page(page, order);
+
+	/* The pages are going onto the homecache free list, so clear count. */
+	for (i = 0; i < (1 << order); i++) {
+		set_page_count(page + i, 0);
+		set_page_private(&page[i], migratetype);
+	}
+
+	return page;
+}
+#endif
+
 /*
  * Checks whether it makes sense to retry the reclaim to make a forward progress
  * for the given allocation request.
@@ -4401,6 +4476,14 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	int no_progress_loops;
 	unsigned int cpuset_mems_cookie;
 	int reserve_flags;
+
+	/*
+	 * Code in arch/mips/kernel/module.c wants physically
+	 * contiguous memory only if there is plenty of free of them.
+	 */
+	if ((gfp_mask & (__GFP_THISNODE | __GFP_NORETRY | __GFP_NOWARN))
+	    == (__GFP_THISNODE | __GFP_NORETRY | __GFP_NOWARN))
+		goto nopage;
 
 	/*
 	 * We also sanity check to catch abuse of atomic reserves being used by
@@ -6807,6 +6890,9 @@ static void __init free_area_init_core(struct pglist_data *pgdat)
 		 * And all highmem pages will be managed by the buddy system.
 		 */
 		zone_init_internals(zone, j, nid, freesize);
+#ifdef CONFIG_HOMECACHE
+		homecache_init_zone_lists(zone);
+#endif
 
 		if (!size)
 			continue;
@@ -7861,7 +7947,8 @@ int __meminit init_per_zone_wmark_min(void)
 	int new_min_free_kbytes;
 
 	lowmem_kbytes = nr_free_buffer_pages() * (PAGE_SIZE >> 10);
-	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 16);
+
+	new_min_free_kbytes = int_sqrt(lowmem_kbytes * 32);
 
 	if (new_min_free_kbytes > user_min_free_kbytes) {
 		min_free_kbytes = new_min_free_kbytes;

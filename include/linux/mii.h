@@ -39,7 +39,7 @@ extern int mii_ethtool_sset(struct mii_if_info *mii, struct ethtool_cmd *ecmd);
 extern int mii_ethtool_set_link_ksettings(
 	struct mii_if_info *mii, const struct ethtool_link_ksettings *cmd);
 extern int mii_check_gmii_support(struct mii_if_info *mii);
-extern void mii_check_link (struct mii_if_info *mii);
+extern int mii_check_link (struct mii_if_info *mii);
 extern unsigned int mii_check_media (struct mii_if_info *mii,
 				     unsigned int ok_to_print,
 				     unsigned int init_media);

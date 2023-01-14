@@ -245,5 +245,6 @@ static int __init msm_dt_timer_init(struct device_node *np)
 
 	return msm_timer_init(freq, 32, irq, !!percpu_offset);
 }
-TIMER_OF_DECLARE(kpss_timer, "qcom,kpss-timer", msm_dt_timer_init);
+
+TIMER_OF_DECLARE(kpss_timer, "qcom,msm-timer", msm_dt_timer_init);
 TIMER_OF_DECLARE(scss_timer, "qcom,scss-timer", msm_dt_timer_init);

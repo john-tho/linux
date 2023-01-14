@@ -146,7 +146,7 @@ struct frag_hdr {
 	__u8	reserved;
 	__be16	frag_off;
 	__be32	identification;
-};
+} __attribute__((packed));	/* required for some archs */
 
 #define	IP6_MF		0x0001
 #define	IP6_OFFSET	0xFFF8
@@ -578,10 +578,10 @@ static inline bool ipv6_addr_equal(const struct in6_addr *a1,
 
 	return ((ul1[0] ^ ul2[0]) | (ul1[1] ^ ul2[1])) == 0UL;
 #else
-	return ((a1->s6_addr32[0] ^ a2->s6_addr32[0]) |
-		(a1->s6_addr32[1] ^ a2->s6_addr32[1]) |
-		(a1->s6_addr32[2] ^ a2->s6_addr32[2]) |
-		(a1->s6_addr32[3] ^ a2->s6_addr32[3])) == 0;
+	return ((get_unaligned(&a1->s6_addr32[0]) ^ get_unaligned(&a2->s6_addr32[0])) |
+		(get_unaligned(&a1->s6_addr32[1]) ^ get_unaligned(&a2->s6_addr32[1])) |
+		(get_unaligned(&a1->s6_addr32[2]) ^ get_unaligned(&a2->s6_addr32[2])) |
+		(get_unaligned(&a1->s6_addr32[3]) ^ get_unaligned(&a2->s6_addr32[3]))) == 0;
 #endif
 }
 
@@ -625,7 +625,7 @@ static inline bool ipv6_prefix_equal(const struct in6_addr *addr1,
 
 	/* check incomplete u32 in prefix */
 	pbi = prefixlen & 0x1f;
-	if (pbi && ((a1[pdw] ^ a2[pdw]) & htonl((0xffffffff) << (32 - pbi))))
+	if (pbi && ((get_unaligned((u32 *)&a1[pdw]) ^ get_unaligned((u32 *)&a2[pdw])) & htonl((0xffffffff) << (32 - pbi))))
 		return false;
 
 	return true;
@@ -752,7 +752,7 @@ static inline int __ipv6_addr_diff32(const void *token1, const void *token2, int
 	addrlen >>= 2;
 
 	for (i = 0; i < addrlen; i++) {
-		__be32 xb = a1[i] ^ a2[i];
+		__be32 xb = get_unaligned(&a1[i]) ^ get_unaligned(&a2[i]);
 		if (xb)
 			return i * 32 + 31 - __fls(ntohl(xb));
 	}
@@ -939,17 +939,17 @@ static inline int ip6_multipath_hash_policy(const struct net *net)
 static inline void ip6_flow_hdr(struct ipv6hdr *hdr, unsigned int tclass,
 				__be32 flowlabel)
 {
-	*(__be32 *)hdr = htonl(0x60000000 | (tclass << 20)) | flowlabel;
+	put_unaligned(htonl(0x60000000 | (tclass << 20)) | flowlabel, (__be32 *)hdr);
 }
 
 static inline __be32 ip6_flowinfo(const struct ipv6hdr *hdr)
 {
-	return *(__be32 *)hdr & IPV6_FLOWINFO_MASK;
+	return get_unaligned((__be32 *)hdr) & IPV6_FLOWINFO_MASK;
 }
 
 static inline __be32 ip6_flowlabel(const struct ipv6hdr *hdr)
 {
-	return *(__be32 *)hdr & IPV6_FLOWLABEL_MASK;
+	return get_unaligned((__be32 *)hdr) & IPV6_FLOWLABEL_MASK;
 }
 
 static inline u8 ip6_tclass(__be32 flowinfo)

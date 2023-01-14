@@ -16,7 +16,7 @@ typedef union {
 	__be32		a4;
 	__be32		a6[4];
 	struct in6_addr	in6;
-} xfrm_address_t;
+} __attribute__((packed)) xfrm_address_t;
 
 /* Ident of a specific xfrm_state. It is used on input to lookup
  * the state by (spi,daddr,ah/esp) or to store information about
@@ -384,7 +384,7 @@ struct xfrm_usersa_info {
 #define XFRM_STATE_AF_UNSPEC	32
 #define XFRM_STATE_ALIGN4	64
 #define XFRM_STATE_ESN		128
-};
+} __attribute__ ((aligned (8))); // MT
 
 #define XFRM_SA_XFLAG_DONT_ENCAP_DSCP	1
 
@@ -423,7 +423,7 @@ struct xfrm_userpolicy_info {
 	/* Automatically expand selector to include matching ICMP payloads. */
 #define XFRM_POLICY_ICMP	2
 	__u8				share;
-};
+} __attribute__ ((aligned (8))); // MT
 
 struct xfrm_userpolicy_id {
 	struct xfrm_selector		sel;

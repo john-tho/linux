@@ -155,6 +155,13 @@ EXPORT_SYMBOL(get_baudrate);
 #if defined(CONFIG_FSL_SOC_BOOKE) || defined(CONFIG_PPC_86xx)
 static __be32 __iomem *rstcr;
 
+void __attribute__((noreturn)) fsl_rstcr_halt(void)
+{
+	local_irq_disable();
+        out_be32(rstcr, 0x4);
+	while (1) ;
+}
+
 static int fsl_rstcr_restart(struct notifier_block *this,
 			     unsigned long mode, void *cmd)
 {

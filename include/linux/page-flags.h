@@ -127,6 +127,9 @@ enum pageflags {
 #ifdef CONFIG_MEMORY_FAILURE
 	PG_hwpoison,		/* hardware poisoned page. Don't touch */
 #endif
+#ifdef CONFIG_HOMECACHE
+	PG_homecache_nomigrate,	/* Page can't be homecache migrated */
+#endif
 #if defined(CONFIG_IDLE_PAGE_TRACKING) && defined(CONFIG_64BIT)
 	PG_young,
 	PG_idle,
@@ -422,6 +425,10 @@ static inline bool set_hwpoison_free_buddy_page(struct page *page)
 	return 0;
 }
 #define __PG_HWPOISON 0
+#endif
+
+#ifdef CONFIG_HOMECACHE
+__PAGEFLAG(HomecacheNomigrate, homecache_nomigrate, PF_NO_TAIL)
 #endif
 
 #if defined(CONFIG_IDLE_PAGE_TRACKING) && defined(CONFIG_64BIT)

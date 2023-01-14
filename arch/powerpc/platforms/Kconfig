@@ -113,6 +113,15 @@ config PPC_EPAPR_HV_PIC
 config MPIC_WEIRD
 	bool
 
+config MT_VIC
+	bool
+
+config RB_AUX
+	bool
+
+config RB_PCI
+	bool
+
 config MPIC_MSGR
 	bool "MPIC message register support"
 	depends on MPIC
@@ -189,6 +198,9 @@ config PPC_INDIRECT_MMIO
 	bool
 
 config PPC_IO_WORKAROUNDS
+	bool
+
+config RB_IOMAP
 	bool
 
 source "drivers/cpufreq/Kconfig"

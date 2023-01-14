@@ -843,6 +843,12 @@ static int inet_rtm_delroute(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (err < 0)
 		goto errout;
 
+	if (cfg.fc_dst_len == 253) {
+	        if (fib_sync_down_proto(net, cfg.fc_protocol))
+	                fib_flush(net);
+	        goto errout;
+	}
+
 	if (cfg.fc_nh_id && !nexthop_find_by_id(net, cfg.fc_nh_id)) {
 		NL_SET_ERR_MSG(extack, "Nexthop id does not exist");
 		err = -EINVAL;
@@ -1474,11 +1480,6 @@ static int fib_netdev_event(struct notifier_block *this, unsigned long event, vo
 		fib_disable_ip(dev, event, false);
 		break;
 	case NETDEV_CHANGE:
-		flags = dev_get_flags(dev);
-		if (flags & (IFF_RUNNING | IFF_LOWER_UP))
-			fib_sync_up(dev, RTNH_F_LINKDOWN);
-		else
-			fib_sync_down_dev(dev, event, false);
 		rt_cache_flush(net);
 		break;
 	case NETDEV_CHANGEMTU:

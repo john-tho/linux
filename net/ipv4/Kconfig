@@ -406,7 +406,7 @@ config INET_XFRM_TUNNEL
 	default n
 
 config INET_TUNNEL
-	tristate
+	tristate "IP: INET_TUNNEL"
 	default n
 
 config INET_DIAG

@@ -130,6 +130,8 @@ static int mpls_xmit(struct sk_buff *skb)
 		bos = false;
 	}
 
+	if (tun_encap_info->limit && mpls_limit_query(tun_encap_info->limit, skb) != 0) goto drop;
+
 	mpls_stats_inc_outucastpkts(out_dev, skb);
 
 	if (rt) {
@@ -199,6 +201,8 @@ static int mpls_build_state(struct nlattr *nla,
 			     extack);
 	if (ret)
 		goto errout;
+
+	if (tb[MPLS_IPTUNNEL_LIMIT]) tun_encap_info->limit = nla_get_u32(tb[MPLS_IPTUNNEL_LIMIT]);
 
 	tun_encap_info->ttl_propagate = MPLS_TTL_PROP_DEFAULT;
 

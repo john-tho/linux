@@ -164,11 +164,13 @@ static int msm_pinmux_set_mux(struct pinctrl_dev *pctldev,
 {
 	struct msm_pinctrl *pctrl = pinctrl_dev_get_drvdata(pctldev);
 	const struct msm_pingroup *g;
+	const struct msm_function *f;
 	unsigned long flags;
 	u32 val, mask;
 	int i;
 
 	g = &pctrl->soc->groups[group];
+	f = &pctrl->soc->functions[function];
 	mask = GENMASK(g->mux_bit + order_base_2(g->nfuncs) - 1, g->mux_bit);
 
 	for (i = 0; i < g->nfuncs; i++) {
@@ -185,6 +187,14 @@ static int msm_pinmux_set_mux(struct pinctrl_dev *pctldev,
 	val &= ~mask;
 	val |= i << g->mux_bit;
 	msm_writel_ctl(val, pctrl, g);
+
+	/*
+	 * if an alternate copy configuration is required, configure the pins to
+	 * steer the function to the correct set of pins.  This is used in cases
+	 * where we have more than one copy of the pins for a function
+	 */
+	if (f->requires_copy_select)
+		writel(f->copy_select_value, pctrl->regs[0] + f->copy_select_reg);
 
 	raw_spin_unlock_irqrestore(&pctrl->lock, flags);
 
@@ -1089,7 +1099,7 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 		return -EINVAL;
 
 	chip = &pctrl->chip;
-	chip->base = -1;
+	chip->base = 0;
 	chip->ngpio = ngpio;
 	chip->label = dev_name(pctrl->dev);
 	chip->parent = pctrl->dev;

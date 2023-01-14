@@ -14,6 +14,10 @@
 #include <asm/dma-coherence.h>
 #include <asm/io.h>
 
+#ifdef CONFIG_MIPS_MIKROTIK
+#include <asm/rb/boards.h>
+#endif
+
 /*
  * The affected CPUs below in 'cpu_needs_post_dma_flush()' can speculatively
  * fill random cachelines with stale data at any time, requiring an extra
@@ -51,6 +55,10 @@ void arch_dma_prep_coherent(struct page *page, size_t size)
 
 void *uncached_kernel_address(void *addr)
 {
+#ifdef CONFIG_MIPS_MIKROTIK
+	if (mips_machgroup == MACH_GROUP_MT_MMIPS)
+		addr += 256 * 1024 * 1024;
+#endif   
 	return (void *)(__pa(addr) + UNCAC_BASE);
 }
 

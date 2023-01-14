@@ -239,14 +239,22 @@ dump_counters(struct sk_buff *skb, struct nf_conn_acct *acct,
 	enum ctattr_type attr = dir ? CTA_COUNTERS_REPLY: CTA_COUNTERS_ORIG;
 	struct nf_conn_counter *counter = acct->counter;
 	struct nlattr *nest_count;
-	u64 pkts, bytes;
+	u64 pkts, bytes, fppkts, fpbytes;
+	u32 rate = 0;
 
 	if (type == IPCTNL_MSG_CT_GET_CTRZERO) {
 		pkts = atomic64_xchg(&counter[dir].packets, 0);
 		bytes = atomic64_xchg(&counter[dir].bytes, 0);
+		fppkts = atomic64_xchg(&counter[dir].fp_packets, 0);
+		fpbytes = atomic64_xchg(&counter[dir].fp_bytes, 0);
 	} else {
 		pkts = atomic64_read(&counter[dir].packets);
 		bytes = atomic64_read(&counter[dir].bytes);
+		fppkts = atomic64_read(&counter[dir].fp_packets);
+		fpbytes = atomic64_read(&counter[dir].fp_bytes);
+	}
+	if (time_before(jiffies, counter[dir].second_end_jiffies + HZ)) {
+		rate = atomic_read(&counter[dir].bytes_prev_second);
 	}
 
 	nest_count = nla_nest_start(skb, attr);
@@ -256,7 +264,13 @@ dump_counters(struct sk_buff *skb, struct nf_conn_acct *acct,
 	if (nla_put_be64(skb, CTA_COUNTERS_PACKETS, cpu_to_be64(pkts),
 			 CTA_COUNTERS_PAD) ||
 	    nla_put_be64(skb, CTA_COUNTERS_BYTES, cpu_to_be64(bytes),
-			 CTA_COUNTERS_PAD))
+			 CTA_COUNTERS_PAD) ||
+	    nla_put_be64(skb, CTA_COUNTERS_FP_PACKETS, cpu_to_be64(fppkts),
+			 CTA_COUNTERS_PAD) ||
+	    nla_put_be64(skb, CTA_COUNTERS_FP_BYTES, cpu_to_be64(fpbytes),
+			 CTA_COUNTERS_PAD) ||
+	    nla_put_be32(skb, CTA_COUNTERS_RATE, cpu_to_be32(rate)))
+	    
 		goto nla_put_failure;
 
 	nla_nest_end(skb, nest_count);
@@ -636,6 +650,9 @@ static inline size_t ctnetlink_acct_size(const struct nf_conn *ct)
 	return 2 * nla_total_size(0) /* CTA_COUNTERS_ORIG|REPL */
 	       + 2 * nla_total_size_64bit(sizeof(uint64_t)) /* CTA_COUNTERS_PACKETS */
 	       + 2 * nla_total_size_64bit(sizeof(uint64_t)) /* CTA_COUNTERS_BYTES */
+	       + 2 * nla_total_size(sizeof(uint64_t)) /* CTA_COUNTERS_FP_PACKETS */
+	       + 2 * nla_total_size(sizeof(uint64_t)) /* CTA_COUNTERS_FP_BYTES */
+	       + 2 * nla_total_size(sizeof(uint32_t)) /* CTA_COUNTERS_RATE */
 	       ;
 }
 
@@ -796,6 +813,7 @@ ctnetlink_conntrack_event(unsigned int events, struct nf_ct_event *item)
 		    && ctnetlink_dump_secctx(skb, ct) < 0)
 			goto nla_put_failure;
 #endif
+
 		if (events & (1 << IPCT_LABEL) &&
 		     ctnetlink_dump_labels(skb, ct) < 0)
 			goto nla_put_failure;
@@ -3308,6 +3326,11 @@ ctnetlink_alloc_expect(const struct nlattr * const cda[], struct nf_conn *ct,
 		exp->expectfn = expfn->expectfn;
 	} else
 		exp->expectfn = NULL;
+
+	if (cda[CTA_EXPECT_TIMEOUT]) {
+		exp->timeout.expires = jiffies
+				+ ntohl(nla_get_be32(cda[CTA_EXPECT_TIMEOUT])) * HZ;
+	}
 
 	exp->class = class;
 	exp->master = ct;

@@ -31,6 +31,18 @@ EXPORT_SYMBOL(__cpuc_flush_dcache_area);
 EXPORT_SYMBOL(cpu_cache);
 #endif
 
+#ifdef CONFIG_CPU_CACHE_V7
+extern void v7_dma_unmap_area(const void *, size_t, int);
+EXPORT_SYMBOL(v7_dma_flush_range);
+void v7_dma_inv_range(void *start, void *end);
+EXPORT_SYMBOL(v7_dma_inv_range);
+void v7_dma_inv_range_nosync(void *start, void *end);
+EXPORT_SYMBOL(v7_dma_inv_range_nosync);
+void v7_dma_flush_range_nosync(void *start, void *end);
+EXPORT_SYMBOL(v7_dma_flush_range_nosync);
+EXPORT_SYMBOL(v7_dma_unmap_area);
+#endif
+
 #ifdef CONFIG_MMU
 #ifndef MULTI_USER
 EXPORT_SYMBOL(__cpu_clear_user_highpage);

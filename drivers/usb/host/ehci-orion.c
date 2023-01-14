@@ -176,7 +176,8 @@ static int ehci_orion_drv_reset(struct usb_hcd *hcd)
 	 * sbuscfg reg has to be set after usb controller reset, otherwise
 	 * the value would be override to 0.
 	 */
-	if (of_device_is_compatible(dev->of_node, "marvell,armada-3700-ehci"))
+	if (of_device_is_compatible(dev->of_node, "marvell,armada-3700-ehci")
+	    || of_device_is_compatible(dev->of_node, "marvell,armada3700-ehci"))
 		wrl(USB_SBUSCFG, USB_SBUSCFG_DEF_VAL);
 
 	return ret;
@@ -221,6 +222,9 @@ static int ehci_orion_drv_probe(struct platform_device *pdev)
 
 	pr_debug("Initializing Orion-SoC USB Host Controller\n");
 
+	if (pdev->dev.of_node)
+		irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
+	else
 	irq = platform_get_irq(pdev, 0);
 	if (irq <= 0) {
 		err = -ENODEV;
@@ -336,6 +340,7 @@ static int ehci_orion_drv_remove(struct platform_device *pdev)
 
 static const struct of_device_id ehci_orion_dt_ids[] = {
 	{ .compatible = "marvell,orion-ehci", },
+	{ .compatible = "marvell,armada3700-ehci", },
 	{ .compatible = "marvell,armada-3700-ehci", },
 	{},
 };

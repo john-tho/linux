@@ -439,6 +439,24 @@ config GENERIC_ADC_THERMAL
 	  to this driver. This driver reports the temperature by reading ADC
 	  channel and converts it to temperature based on lookup table.
 
+config AL_THERMAL_V2
+	bool "Annapurna Labs V2 thermal sensor driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Enable this to plug the Annapurna Labs V2 thermal sensor driver into the
+	  Linux thermal framework
+
+config AL_THERMAL_V3
+	bool "Annapurna Labs V3 thermal sensor driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	select AL_HAL
+	help
+	  Enable this to plug the Annapurna Labs V3 thermal sensor driver into the
+	  Linux thermal framework
+
 menu "Qualcomm thermal drivers"
 depends on (ARCH_QCOM && OF) || COMPILE_TEST
 source "drivers/thermal/qcom/Kconfig"

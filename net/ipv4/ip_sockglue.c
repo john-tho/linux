@@ -749,7 +749,7 @@ static int do_ip_setsockopt(struct sock *sk, int level,
 		}
 		if (inet->tos != val) {
 			inet->tos = val;
-			sk->sk_priority = rt_tos2priority(val);
+			/* sk->sk_priority = rt_tos2priority(val); */
 			sk_dst_reset(sk);
 		}
 		break;

@@ -303,7 +303,12 @@ static int pl061_probe(struct amba_device *adev, const struct amba_id *id)
 		pl061->gc.free = gpiochip_generic_free;
 	}
 
+	if (!of_property_read_u32(dev->of_node, "baseidx", &pl061->gc.base)) {
+	    pl061->gc.base = 256 - 8 - pl061->gc.base;
+	}
+	else {
 	pl061->gc.base = -1;
+	}
 	pl061->gc.get_direction = pl061_get_direction;
 	pl061->gc.direction_input = pl061_direction_input;
 	pl061->gc.direction_output = pl061_direction_output;

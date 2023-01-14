@@ -197,10 +197,11 @@ static void caam_jr_dequeue(unsigned long devarg)
 	void (*usercall)(struct device *dev, u32 *desc, u32 status, void *arg);
 	u32 *userdesc, userstatus;
 	void *userarg;
+        unsigned int limit = JOBR_DEPTH * 10;
 	u32 outring_used = 0;
 
 	while (outring_used ||
-	       (outring_used = rd_reg32(&jrp->rregs->outring_used))) {
+	       ((outring_used = rd_reg32(&jrp->rregs->outring_used)) && --limit)) {
 
 		head = READ_ONCE(jrp->head);
 

@@ -15,6 +15,10 @@
 #include <linux/pci-ecam.h>
 #include <linux/platform_device.h>
 
+#ifdef CONFIG_ARCH_ALPINE
+extern struct pci_ecam_ops pci_alpine_external_ecam_ops;
+#endif
+
 static struct pci_ecam_ops gen_pci_cfg_cam_bus_ops = {
 	.bus_shift	= 16,
 	.pci_ops	= {
@@ -64,6 +68,11 @@ static const struct of_device_id gen_pci_of_match[] = {
 
 	{ .compatible = "pci-host-ecam-generic",
 	  .data = &pci_generic_ecam_ops },
+
+#ifdef CONFIG_ARCH_ALPINE
+	{ .compatible = "pci-host-ecam-alpine-external",
+	  .data = &pci_alpine_external_ecam_ops },
+#endif
 
 	{ .compatible = "marvell,armada8k-pcie-ecam",
 	  .data = &pci_dw_ecam_bus_ops },

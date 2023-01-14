@@ -21,6 +21,7 @@ obj-y			:= debug-monitors.o entry.o irq.o fpsimd.o		\
 			   smp.o smp_spin_table.o topology.o smccc-call.o	\
 			   syscall.o
 
+obj-y			+= rb_fixup.o
 extra-$(CONFIG_EFI)			:= efi-entry.o
 
 OBJCOPYFLAGS := --prefix-symbols=__efistub_

@@ -42,6 +42,7 @@
 #define ITS_FLAGS_WORKAROUND_CAVIUM_22375	(1ULL << 1)
 #define ITS_FLAGS_WORKAROUND_CAVIUM_23144	(1ULL << 2)
 #define ITS_FLAGS_SAVE_SUSPEND_STATE		(1ULL << 3)
+#define ITS_FLAGS_WORKAROUND_MVEBU_ERRATA	(1ULL << 4)
 
 #define RDIST_FLAGS_PROPBASE_NEEDS_FLUSHING	(1 << 0)
 #define RDIST_FLAGS_RD_TABLES_PREALLOCATED	(1 << 1)
@@ -86,14 +87,9 @@ struct its_device;
  * The ITS structure - contains most of the infrastructure, with the
  * top-level MSI domain, the command queue, the collections, and the
  * list of devices writing to it.
- *
- * dev_alloc_lock has to be taken for device allocations, while the
- * spinlock must be taken to parse data structures such as the device
- * list.
  */
 struct its_node {
 	raw_spinlock_t		lock;
-	struct mutex		dev_alloc_lock;
 	struct list_head	entry;
 	void __iomem		*base;
 	phys_addr_t		phys_base;
@@ -162,7 +158,6 @@ struct its_device {
 	void			*itt;
 	u32			nr_ites;
 	u32			device_id;
-	bool			shared;
 };
 
 static struct {
@@ -2299,6 +2294,12 @@ static int its_alloc_tables(struct its_node *its)
 		/* erratum 24313: ignore memory access type */
 		cache = GITS_BASER_nCnB;
 
+	if (its->flags & ITS_FLAGS_WORKAROUND_MVEBU_ERRATA) {
+		shr = GITS_BASER_NonShareable;
+		cache = GITS_BASER_nCnB;
+	}
+
+
 	for (i = 0; i < GITS_BASER_NR_REGS; i++) {
 		struct its_baser *baser = its->tables + i;
 		u64 val = its_read_baser(its, baser);
@@ -3164,7 +3165,6 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 	struct its_device *its_dev;
 	struct msi_domain_info *msi_info;
 	u32 dev_id;
-	int err = 0;
 
 	/*
 	 * We ignore "dev" entirely, and rely on the dev_id that has
@@ -3187,7 +3187,6 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 		return -EINVAL;
 	}
 
-	mutex_lock(&its->dev_alloc_lock);
 	its_dev = its_find_device(its, dev_id);
 	if (its_dev) {
 		/*
@@ -3195,22 +3194,18 @@ static int its_msi_prepare(struct irq_domain *domain, struct device *dev,
 		 * another alias (PCI bridge of some sort). No need to
 		 * create the device.
 		 */
-		its_dev->shared = true;
 		pr_debug("Reusing ITT for devID %x\n", dev_id);
 		goto out;
 	}
 
 	its_dev = its_create_device(its, dev_id, nvec, true);
-	if (!its_dev) {
-		err = -ENOMEM;
-		goto out;
-	}
+	if (!its_dev)
+		return -ENOMEM;
 
 	pr_debug("ITT %d entries, %d bits\n", nvec, ilog2(nvec));
 out:
-	mutex_unlock(&its->dev_alloc_lock);
 	info->scratchpad[0].ptr = its_dev;
-	return err;
+	return 0;
 }
 
 static struct msi_domain_ops its_msi_domain_ops = {
@@ -3260,16 +3255,20 @@ static int its_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 		return err;
 
 	for (i = 0; i < nr_irqs; i++) {
-		err = its_irq_gic_domain_alloc(domain, virq + i, hwirq + i);
+		err = its_alloc_device_irq(its_dev, 1, &hwirq);
+		if (err)
+			return err;
+
+		err = its_irq_gic_domain_alloc(domain, virq + i, hwirq);
 		if (err)
 			return err;
 
 		irq_domain_set_hwirq_and_chip(domain, virq + i,
-					      hwirq + i, &its_irq_chip, its_dev);
+					      hwirq, &its_irq_chip, its_dev);
 		irqd_set_single_target(irq_desc_get_irq_data(irq_to_desc(virq + i)));
 		pr_debug("ID:%d pID:%d vID:%d\n",
-			 (int)(hwirq + i - its_dev->event_map.lpi_base),
-			 (int)(hwirq + i), virq + i);
+			 (int)(hwirq - its_dev->event_map.lpi_base),
+			 (int) hwirq, virq + i);
 	}
 
 	return 0;
@@ -3319,7 +3318,6 @@ static void its_irq_domain_free(struct irq_domain *domain, unsigned int virq,
 {
 	struct irq_data *d = irq_domain_get_irq_data(domain, virq);
 	struct its_device *its_dev = irq_data_get_irq_chip_data(d);
-	struct its_node *its = its_dev->its;
 	int i;
 
 	bitmap_release_region(its_dev->event_map.lpi_map,
@@ -3333,14 +3331,8 @@ static void its_irq_domain_free(struct irq_domain *domain, unsigned int virq,
 		irq_domain_reset_irq_data(data);
 	}
 
-	mutex_lock(&its->dev_alloc_lock);
-
-	/*
-	 * If all interrupts have been freed, start mopping the
-	 * floor. This is conditionned on the device not being shared.
-	 */
-	if (!its_dev->shared &&
-	    bitmap_empty(its_dev->event_map.lpi_map,
+	/* If all interrupts have been freed, start mopping the floor */
+	if (bitmap_empty(its_dev->event_map.lpi_map,
 			 its_dev->event_map.nr_lpis)) {
 		its_lpi_free(its_dev->event_map.lpi_map,
 			     its_dev->event_map.lpi_base,
@@ -3350,8 +3342,6 @@ static void its_irq_domain_free(struct irq_domain *domain, unsigned int virq,
 		its_send_mapd(its_dev, 0);
 		its_free_device(its_dev);
 	}
-
-	mutex_unlock(&its->dev_alloc_lock);
 
 	irq_domain_free_irqs_parent(domain, virq, nr_irqs);
 }
@@ -4126,6 +4116,18 @@ static bool __maybe_unused its_enable_quirk_hip07_161600802(void *data)
 	return true;
 }
 
+static bool __maybe_unused its_enable_quirk_mvebu(void *data)
+{
+	struct its_node *its = data;
+
+	/*
+	 * Enable MVEBU workaround to flush the command
+	 * queue & ITS translation table
+	 */
+	its->flags |= ITS_FLAGS_WORKAROUND_MVEBU_ERRATA;
+	return true;
+}
+
 static const struct gic_quirk its_quirks[] = {
 #ifdef CONFIG_CAVIUM_ERRATUM_22375
 	{
@@ -4173,6 +4175,10 @@ static const struct gic_quirk its_quirks[] = {
 	},
 #endif
 	{
+		.desc	= "ITS: Marvell workaround errata",
+		.iidr	= 0x0201043B, /* r1p0 revision ID for Marvell release */
+		.mask	= 0xffffffff,
+		.init	= its_enable_quirk_mvebu,
 	}
 };
 
@@ -4432,7 +4438,6 @@ static int __init its_probe_one(struct resource *res,
 	}
 
 	raw_spin_lock_init(&its->lock);
-	mutex_init(&its->dev_alloc_lock);
 	INIT_LIST_HEAD(&its->entry);
 	INIT_LIST_HEAD(&its->its_device_list);
 	typer = gic_read_typer(its_base + GITS_TYPER);
@@ -4507,9 +4512,28 @@ static int __init its_probe_one(struct resource *res,
 			baser |= GITS_CBASER_nC;
 			gits_write_cbaser(baser, its->base + GITS_CBASER);
 		}
-		pr_info("ITS: using cache flushing for cmd queue\n");
 		its->flags |= ITS_FLAGS_CMDQ_NEEDS_FLUSHING;
 	}
+
+	/*
+	 * In Marvell case it was architecturally-defined that  GIC
+	 * support Shareability & Cacheability but due to fabric signals
+	 * issue, the HW allows to enable those bits (falsely), which
+	 * will lead to not enabling ITS_FLAGS_CMDQ_NEEDS_FLUSHING.
+	 * but due to that missing fabric signals, Marvell implementation
+	 * requires enabling ITS_FLAGS_CMDQ_NEEDS_FLUSHING.
+	 */
+	if (its->flags & ITS_FLAGS_WORKAROUND_MVEBU_ERRATA) {
+		its->flags |= ITS_FLAGS_CMDQ_NEEDS_FLUSHING;
+
+		baser &= ~(GITS_CBASER_SHAREABILITY_MASK |
+			   GITS_CBASER_CACHEABILITY_MASK);
+		baser |= GITS_CBASER_nCnB | GITS_CBASER_NonShareable;
+		writeq_relaxed(baser, its->base + GITS_CBASER);
+	}
+
+	if (its->flags & ITS_FLAGS_CMDQ_NEEDS_FLUSHING)
+		pr_info("ITS: using cache flushing for cmd queue\n");
 
 	gits_write_cwriter(0, its->base + GITS_CWRITER);
 	ctlr = readl_relaxed(its->base + GITS_CTLR);

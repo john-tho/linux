@@ -73,6 +73,39 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_HOMECACHE
+
+#include <asm/homecache.h>
+
+static int homecache_migrate_pte(struct page *page, struct vm_area_struct *vma,
+				 unsigned long address, pte_t *ptep,
+				 void *arg)
+{
+	enum ttu_flags flags = (enum ttu_flags)arg;
+	if (flags & TTU_HOMECACHE_START) {
+		/* Use __set_pte() to allow writing the migrating bit. */
+		__set_pte(ptep, pte_mkmigrate(*ptep));
+		flush_tlb_page(vma, address);
+		return 1;
+	}
+	if (flags & TTU_HOMECACHE_FINISH) {
+		BUG_ON(!pte_migrating(*ptep));
+		homecache_update_migrating_pte(page, ptep, vma, address);
+		return 1;
+	}
+	return 0;
+}
+
+/* We have to tolerate migrating PTEs (which are technically "not
+ * present") when we're looking around to find what needs to be marked.
+ */
+#ifdef __tile__
+#undef pte_present
+#define pte_present(pte) (hv_pte_get_present(pte) || hv_pte_get_migrating(pte))
+#endif
+
+#endif
+
 static struct kmem_cache *anon_vma_cachep;
 static struct kmem_cache *anon_vma_chain_cachep;
 
@@ -1448,6 +1481,15 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 
 		/* Unexpected PMD-mapped THP? */
 		VM_BUG_ON_PAGE(!pvmw.pte, page);
+
+#ifdef CONFIG_HOMECACHE
+		if (PageAnon(page) &&
+		    homecache_migrate_pte(page, vma, address, pvmw.pte, arg)) {
+			ret = false;
+			page_vma_mapped_walk_done(&pvmw);
+			break;
+		}
+#endif
 
 		subpage = page - page_to_pfn(page) + pte_pfn(*pvmw.pte);
 		address = pvmw.address;

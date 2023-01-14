@@ -3,6 +3,10 @@
 # Makefile for the netfilter modules on top of IPv4.
 #
 
+subdir-ccflags-$(CONFIG_ARM) += -O2
+subdir-ccflags-$(CONFIG_ARM64) += -O2
+subdir-ccflags-$(CONFIG_TILE) += -O2
+
 # defrag
 obj-$(CONFIG_NF_DEFRAG_IPV4) += nf_defrag_ipv4.o
 

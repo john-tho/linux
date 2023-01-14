@@ -70,6 +70,8 @@ static const char * const emac_clk_name[] = {
 	"rx_clk", "sys_clk"
 };
 
+static unsigned skipEmacClocks = 0;
+
 void emac_reg_update32(void __iomem *addr, u32 mask, u32 val)
 {
 	u32 data = readl(addr);
@@ -150,18 +152,18 @@ static irqreturn_t emac_isr(int _irq, void *data)
 	 * status bit set
 	 */
 	if (status & rx_q->intr) {
-		if (napi_schedule_prep(&rx_q->napi)) {
 			irq->mask &= ~rx_q->intr;
-			__napi_schedule(&rx_q->napi);
-		}
+		napi_schedule(&rx_q->napi);
 	}
 
 	if (status & TX_PKT_INT)
 		emac_mac_tx_process(adpt, &adpt->tx_q);
 
-	if (status & ISR_OVER)
+	if (status & ISR_OVER) {
+		irq->mask &= ~(RXF_OF_INT); // napi will restore OVF interrupt
 		net_warn_ratelimited("%s: TX/RX overflow interrupt\n",
 				     adpt->netdev->name);
+	}
 
 exit:
 	/* enable the interrupt */
@@ -457,6 +459,8 @@ static int emac_clks_phase1_init(struct platform_device *pdev,
 {
 	int ret;
 
+	if (skipEmacClocks) return 0;
+
 	/* On ACPI platforms, clocks are controlled by firmware and/or
 	 * ACPI, not by drivers.
 	 */
@@ -487,6 +491,8 @@ static int emac_clks_phase2_init(struct platform_device *pdev,
 				 struct emac_adapter *adpt)
 {
 	int ret;
+
+	if (skipEmacClocks) return 0;
 
 	if (has_acpi_companion(&pdev->dev))
 		return 0;
@@ -535,12 +541,6 @@ static int emac_probe_resources(struct platform_device *pdev,
 	char maddr[ETH_ALEN];
 	int ret = 0;
 
-	/* get mac address */
-	if (device_get_mac_address(&pdev->dev, maddr, ETH_ALEN))
-		ether_addr_copy(netdev->dev_addr, maddr);
-	else
-		eth_hw_addr_random(netdev);
-
 	/* Core 0 interrupt */
 	ret = platform_get_irq(pdev, 0);
 	if (ret < 0)
@@ -557,6 +557,16 @@ static int emac_probe_resources(struct platform_device *pdev,
 	if (IS_ERR(adpt->csr))
 		return PTR_ERR(adpt->csr);
 
+	if (device_get_mac_address(&pdev->dev, maddr, ETH_ALEN))
+		ether_addr_copy(netdev->dev_addr, maddr);
+	else {
+		//eth_hw_addr_random(netdev);
+		u64 sta = (readl(adpt->base + EMAC_MAC_STA_ADDR0)
+			| (u64)readl(adpt->base + EMAC_MAC_STA_ADDR1) << 32)<<16;
+		sta = swab64(sta);
+
+		memcpy(netdev->dev_addr, &sta, ETH_ALEN);
+	}
 	netdev->base_addr = (unsigned long)adpt->base;
 
 	return 0;
@@ -565,6 +575,9 @@ static int emac_probe_resources(struct platform_device *pdev,
 static const struct of_device_id emac_dt_match[] = {
 	{
 		.compatible = "qcom,fsm9900-emac",
+	},
+	{
+		.compatible = "qcom,mdm9607-emac",
 	},
 	{}
 };
@@ -588,6 +601,10 @@ static int emac_probe(struct platform_device *pdev)
 	u16 devid, revid;
 	u32 reg;
 	int ret;
+
+	if(of_machine_is_compatible("qcom,mdm9607")) {
+		skipEmacClocks = 1;
+	}
 
 	/* The TPD buffer address is limited to:
 	 * 1. PTP:	45bits. (Driver doesn't support yet.)
@@ -643,9 +660,11 @@ static int emac_probe(struct platform_device *pdev)
 		goto err_undo_clocks;
 
 	/* init internal sgmii phy */
+	if (!skipEmacClocks) {
 	ret = emac_sgmii_config(pdev, adpt);
 	if (ret)
 		goto err_undo_mdiobus;
+	}
 
 	/* enable clocks */
 	ret = emac_clks_phase2_init(pdev, adpt);
@@ -670,6 +689,8 @@ static int emac_probe(struct platform_device *pdev)
 			  (ETH_HLEN + ETH_FCS_LEN + VLAN_HLEN);
 
 	INIT_WORK(&adpt->work_thread, emac_work_thread);
+
+	emac_mac_reset(adpt); // need reset TX descriptors
 
 	/* Initialize queues */
 	emac_mac_rx_tx_ring_init_all(pdev, adpt);

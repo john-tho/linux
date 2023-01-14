@@ -322,7 +322,8 @@ static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
 	const u16 *a = (const u16 *)addr1;
 	const u16 *b = (const u16 *)addr2;
 
-	return ((a[0] ^ b[0]) | (a[1] ^ b[1]) | (a[2] ^ b[2])) == 0;
+	return ((get_unaligned((u32 *) addr1) ^ get_unaligned((u32 *) addr2))
+		| (get_unaligned(&a[2]) ^ get_unaligned(&b[2]))) == 0;
 #endif
 }
 
@@ -514,8 +515,8 @@ static inline unsigned long compare_ether_header(const void *a, const void *b)
 	u32 *a32 = (u32 *)((u8 *)a + 2);
 	u32 *b32 = (u32 *)((u8 *)b + 2);
 
-	return (*(u16 *)a ^ *(u16 *)b) | (a32[0] ^ b32[0]) |
-	       (a32[1] ^ b32[1]) | (a32[2] ^ b32[2]);
+	return (get_unaligned((u16 *)a) ^ get_unaligned((u16 *)b)) | (get_unaligned(&a32[0]) ^ get_unaligned(&b32[0])) |
+		(get_unaligned(&a32[1]) ^ get_unaligned(&b32[1])) | (get_unaligned(&a32[2]) ^ get_unaligned(&b32[2]));
 #endif
 }
 

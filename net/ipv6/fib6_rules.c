@@ -163,6 +163,7 @@ static int fib6_rule_action_alt(struct fib_rule *rule, struct flowi *flp,
 
 	switch (rule->action) {
 	case FR_ACT_TO_TBL:
+	case FR_ACT_ONLY_TO_TBL:
 		break;
 	case FR_ACT_UNREACHABLE:
 		return -ENETUNREACH;
@@ -186,6 +187,8 @@ static int fib6_rule_action_alt(struct fib_rule *rule, struct flowi *flp,
 	else
 		err = -EAGAIN;
 
+	if (err == -EAGAIN && rule->action == FR_ACT_ONLY_TO_TBL)
+		err = -ENETUNREACH;
 	return err;
 }
 
@@ -203,6 +206,8 @@ static int __fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
 
 	switch (rule->action) {
 	case FR_ACT_TO_TBL:
+	case FR_ACT_ONLY_TO_TBL:
+	case FR_ACT_FWMARK_TBL:
 		break;
 	case FR_ACT_UNREACHABLE:
 		err = -ENETUNREACH;
@@ -219,7 +224,11 @@ static int __fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
 		goto discard_pkt;
 	}
 
-	tb_id = fib_rule_get_table(rule, arg);
+	if (rule->action == FR_ACT_FWMARK_TBL) {
+		tb_id = (flp->flowi_mark & 0xffff);
+		tb_id += (tb_id == RT_TABLE_MAIN ? 0 : 100000);
+	}
+	else tb_id = fib_rule_get_table(rule, arg);
 	table = fib6_get_table(net, tb_id);
 	if (!table) {
 		err = -EAGAIN;
@@ -230,7 +239,6 @@ static int __fib6_rule_action(struct fib_rule *rule, struct flowi *flp,
 	if (rt != net->ipv6.ip6_null_entry) {
 		err = fib6_rule_saddr(net, rule, flags, flp6,
 				      ip6_dst_idev(&rt->dst)->dev);
-
 		if (err == -EAGAIN)
 			goto again;
 
@@ -248,6 +256,8 @@ discard_pkt:
 	if (!(flags & RT6_LOOKUP_F_DST_NOREF))
 		dst_hold(&rt->dst);
 out:
+	if (err == -EAGAIN && rule->action == FR_ACT_ONLY_TO_TBL)
+		err = -ENETUNREACH;
 	res->rt6 = rt;
 	return err;
 }
@@ -466,11 +476,15 @@ static int __net_init fib6_rules_net_init(struct net *net)
 	if (IS_ERR(ops))
 		return PTR_ERR(ops);
 
-	err = fib_default_rule_add(ops, 0, RT6_TABLE_LOCAL, 0);
+	err = fib_default_rule_add(ops, 200, RT6_TABLE_LOCAL, 0);
 	if (err)
 		goto out_fib6_rules_ops;
 
-	err = fib_default_rule_add(ops, 0x7FFE, RT6_TABLE_MAIN, 0);
+	err = fib_default_rule_add(ops, 0x7FFF0800, RT_TABLE_UNSPEC, 0);
+	if (err)
+		goto out_fib6_rules_ops;
+
+	err = fib_default_rule_add(ops, 0x7FFFFFFE, RT6_TABLE_MAIN, 0);
 	if (err)
 		goto out_fib6_rules_ops;
 

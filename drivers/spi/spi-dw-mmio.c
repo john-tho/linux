@@ -131,6 +131,18 @@ static int dw_spi_alpine_init(struct platform_device *pdev,
 	return 0;
 }
 
+static struct mutex dw_spi_cs_mutex;
+
+void dw_spi_cs_lock(void) {
+    mutex_lock(&dw_spi_cs_mutex);
+}
+EXPORT_SYMBOL(dw_spi_cs_lock);
+
+void dw_spi_cs_unlock(void) {
+    mutex_unlock(&dw_spi_cs_mutex);
+}
+EXPORT_SYMBOL(dw_spi_cs_unlock);
+
 static int dw_spi_mmio_probe(struct platform_device *pdev)
 {
 	int (*init_func)(struct platform_device *pdev,
@@ -200,6 +212,8 @@ static int dw_spi_mmio_probe(struct platform_device *pdev)
 	if (ret)
 		goto out;
 
+	mutex_init(&dw_spi_cs_mutex);
+
 	platform_set_drvdata(pdev, dwsmmio);
 	return 0;
 
@@ -225,6 +239,7 @@ static int dw_spi_mmio_remove(struct platform_device *pdev)
 
 static const struct of_device_id dw_spi_mmio_of_match[] = {
 	{ .compatible = "snps,dw-apb-ssi", },
+	{ .compatible = "snps,dw-spi-mmio", .data = dw_spi_alpine_init},
 	{ .compatible = "mscc,ocelot-spi", .data = dw_spi_mscc_ocelot_init},
 	{ .compatible = "mscc,jaguar2-spi", .data = dw_spi_mscc_jaguar2_init},
 	{ .compatible = "amazon,alpine-dw-apb-ssi", .data = dw_spi_alpine_init},

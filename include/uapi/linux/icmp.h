@@ -82,7 +82,7 @@ struct icmphdr {
 	} frag;
 	__u8	reserved[4];
   } un;
-};
+} __attribute__((packed));
 
 
 /*
@@ -93,7 +93,7 @@ struct icmphdr {
 
 struct icmp_filter {
 	__u32		data;
-};
+} __attribute__((packed));
 
 
 #endif /* _UAPI_LINUX_ICMP_H */

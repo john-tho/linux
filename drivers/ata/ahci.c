@@ -56,7 +56,7 @@ enum board_ids {
 	board_ahci_yes_fbs,
 
 	/* board IDs for specific chipsets in alphabetical order */
-	board_ahci_al,
+	board_ahci_alpine,
 	board_ahci_avn,
 	board_ahci_mcp65,
 	board_ahci_mcp77,
@@ -169,8 +169,8 @@ static const struct ata_port_info ahci_port_info[] = {
 		.port_ops	= &ahci_ops,
 	},
 	/* by chipsets */
-	[board_ahci_al] = {
-		AHCI_HFLAGS	(AHCI_HFLAG_NO_PMP | AHCI_HFLAG_NO_MSI),
+	[board_ahci_alpine] = {
+		AHCI_HFLAGS	(AHCI_HFLAG_NO_PMP | AHCI_HFLAG_AL_MSIX | AHCI_HFLAG_MULTI_MSI),
 		.flags		= AHCI_FLAG_COMMON,
 		.pio_mask	= ATA_PIO4,
 		.udma_mask	= ATA_UDMA6,
@@ -425,11 +425,8 @@ static const struct pci_device_id ahci_pci_tbl[] = {
 	{ PCI_VDEVICE(ATI, 0x4394), board_ahci_sb700 }, /* ATI SB700/800 */
 	{ PCI_VDEVICE(ATI, 0x4395), board_ahci_sb700 }, /* ATI SB700/800 */
 
-	/* Amazon's Annapurna Labs support */
-	{ PCI_DEVICE(PCI_VENDOR_ID_AMAZON_ANNAPURNA_LABS, 0x0031),
-		.class = PCI_CLASS_STORAGE_SATA_AHCI,
-		.class_mask = 0xffffff,
-		board_ahci_al },
+	/* Annapurna Labs */
+	{ PCI_VDEVICE(ANNAPURNA_LABS, 0x0031), board_ahci_alpine }, /* 0031 */
 	/* AMD */
 	{ PCI_VDEVICE(AMD, 0x7800), board_ahci }, /* AMD Hudson-2 */
 	{ PCI_VDEVICE(AMD, 0x7900), board_ahci }, /* AMD CZ */
@@ -632,6 +629,11 @@ static void ahci_pci_save_initial_config(struct pci_dev *pdev,
 	if (pdev->vendor == PCI_VENDOR_ID_JMICRON && pdev->device == 0x2361) {
 		dev_info(&pdev->dev, "JMB361 has only one port\n");
 		hpriv->force_port_map = 1;
+	}
+
+
+	if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS && pdev->device == 0x0031) {
+		hpriv->force_port_map = 0xf;
 	}
 
 	/*
@@ -1539,6 +1541,18 @@ static int ahci_init_msi(struct pci_dev *pdev, unsigned int n_ports,
 
 	if (hpriv->flags & AHCI_HFLAG_NO_MSI)
 		return -ENODEV;
+
+	if (al_ahci_enabled()) {
+		pr_debug("al pdev->vendor: %d anpa: %d\n", pdev->vendor,
+			 PCI_VENDOR_ID_ANNAPURNA_LABS);
+		if (pdev->vendor == PCI_VENDOR_ID_ANNAPURNA_LABS) {
+			nvec = al_init_msix_interrupts(pdev, n_ports, hpriv);
+			pr_debug("init msix interrupts returned: %d\n", nvec);
+			hpriv->get_irq_vector = ahci_get_irq_vector;
+			if (nvec > 0)
+				return nvec;
+		}
+	}
 
 	/*
 	 * If number of MSIs is less than number of ports then Sharing Last

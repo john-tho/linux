@@ -835,9 +835,9 @@ void *__weak bpf_jit_alloc_exec(unsigned long size)
 	return module_alloc(size);
 }
 
-void __weak bpf_jit_free_exec(void *addr)
+void __weak bpf_jit_free_exec(void *addr, unsigned sz)
 {
-	module_memfree(addr);
+	module_memfree(addr, sz);
 }
 
 struct bpf_binary_header *
@@ -884,7 +884,7 @@ void bpf_jit_binary_free(struct bpf_binary_header *hdr)
 {
 	u32 pages = hdr->pages;
 
-	bpf_jit_free_exec(hdr);
+	bpf_jit_free_exec(hdr, hdr->pages * PAGE_SIZE);
 	bpf_jit_uncharge_modmem(pages);
 }
 

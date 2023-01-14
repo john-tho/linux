@@ -47,6 +47,7 @@ source "drivers/net/wireless/st/Kconfig"
 source "drivers/net/wireless/ti/Kconfig"
 source "drivers/net/wireless/zydas/Kconfig"
 source "drivers/net/wireless/quantenna/Kconfig"
+source "drivers/net/wireless/cnss2/Kconfig"
 
 config PCMCIA_RAYCS
 	tristate "Aviator/Raytheon 2.4GHz wireless support"
@@ -114,6 +115,12 @@ config USB_NET_RNDIS_WLAN
 	  only wireless RNDIS chip known to date.
 
 	  If you choose to build a module, it'll be called rndis_wlan.
+
+config CNSS_QCA6290
+	bool "Enable CNSS QCA6290 specific changes"
+	---help---
+	  This enables the changes that are specific to CNSS QCA6290 chipset.
+	  These changes are only needed for QCA6290 pre-silicon development.
 
 config VIRT_WIFI
 	tristate "Wifi wrapper for ethernet drivers"

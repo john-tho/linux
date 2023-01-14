@@ -33,6 +33,7 @@ static const struct nla_policy rtm_nh_policy[NHA_MAX + 1] = {
 	[NHA_ENCAP]		= { .type = NLA_NESTED },
 	[NHA_GROUPS]		= { .type = NLA_FLAG },
 	[NHA_MASTER]		= { .type = NLA_U32 },
+	[NHA_SOME_DST]		= { .type = NLA_U32 },
 };
 
 static unsigned int nh_dev_hashfn(unsigned int val)
@@ -651,7 +652,7 @@ int fib_check_nexthop(struct nexthop *nh, u8 scope,
 
 		nhg = rtnl_dereference(nh->nh_grp);
 		/* all nexthops in a group have the same scope */
-		err = nexthop_check_scope(nhg->nh_entries[0].nh, scope, extack);
+		if (nhg->num_nh) err = nexthop_check_scope(nhg->nh_entries[0].nh, scope, extack);
 	} else {
 		err = nexthop_check_scope(nh, scope, extack);
 	}
@@ -737,14 +738,24 @@ static void remove_nexthop_from_groups(struct net *net, struct nexthop *nh,
 
 	list_for_each_entry_safe(nhge, tmp, &nh->grp_list, nh_list) {
 		struct nh_group *nhg;
+		struct nexthop *nhe = 0;
 
 		list_del(&nhge->nh_list);
 		nhg = rtnl_dereference(nhge->nh_parent->nh_grp);
+		if (nhg->num_nh == 1)
+			nhe = nexthop_find_by_id(net, nhg->has_v4 ? 1 : 2);
+		if (!nhe) {
 		remove_nh_grp_entry(nhge, nhg, nlinfo);
-
-		/* if this group has no more entries then remove it */
-		if (!nhg->num_nh)
-			remove_nexthop(net, nhge->nh_parent, nlinfo);
+		} else {
+			struct nexthop *nhp = nhge->nh;
+			list_add(&nhge->nh_list, &nhe->grp_list);
+			if (nhp == nhe)
+				continue;
+			nexthop_get(nhe);
+			nhge->nh = nhe;
+			nh_group_rebalance(nhg);
+			nexthop_put(nhp);
+		}
 	}
 }
 
@@ -1159,6 +1170,7 @@ static int nh_create_ipv4(struct net *net, struct nexthop *nh,
 		fib_nh_release(net, fib_nh);
 		goto out;
 	}
+	fib_nh->nh_common.nhc_gw.ipv6.in6_u.u6_addr32[1] = cfg->gw.ipv6.in6_u.u6_addr32[1];
 
 	/* sets nh_dev if successful */
 	err = fib_check_nh(net, fib_nh, tb_id, 0, extack);
@@ -1400,10 +1412,15 @@ static int rtm_to_nh_config(struct net *net, struct sk_buff *skb,
 		NL_SET_ERR_MSG(extack, "Nexthop device is not up");
 		err = -ENETDOWN;
 		goto out;
+#if 0
 	} else if (!netif_carrier_ok(cfg->dev)) {
 		NL_SET_ERR_MSG(extack, "Carrier for nexthop device is down");
 		err = -ENETDOWN;
 		goto out;
+#endif
+	}
+	if (tb[NHA_SOME_DST] && cfg->nh_family == AF_INET) {
+	    cfg->gw.ipv6.in6_u.u6_addr32[1] = nla_get_be32(tb[NHA_SOME_DST]);
 	}
 
 	err = -EINVAL;
@@ -1766,8 +1783,6 @@ static int nh_netdev_event(struct notifier_block *this,
 		nexthop_flush_dev(dev);
 		break;
 	case NETDEV_CHANGE:
-		if (!(dev_get_flags(dev) & (IFF_RUNNING | IFF_LOWER_UP)))
-			nexthop_flush_dev(dev);
 		break;
 	case NETDEV_CHANGEMTU:
 		info_ext = ptr;

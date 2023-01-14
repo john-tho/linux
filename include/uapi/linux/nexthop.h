@@ -49,6 +49,7 @@ enum {
 	NHA_GROUPS,	/* flag; only return nexthop groups in dump */
 	NHA_MASTER,	/* u32;  only return nexthops with given master dev */
 
+	NHA_SOME_DST,   /* an example dst address to help select source */
 	__NHA_MAX,
 };
 

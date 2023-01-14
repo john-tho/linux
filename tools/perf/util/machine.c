@@ -1345,6 +1345,8 @@ static int machine__set_modules_path(struct machine *machine)
 {
 	char *version;
 	char modules_path[PATH_MAX];
+	struct dirent *dent;
+	DIR *dir;
 
 	version = get_kernel_version(machine->root_dir);
 	if (!version)
@@ -1352,9 +1354,37 @@ static int machine__set_modules_path(struct machine *machine)
 
 	snprintf(modules_path, sizeof(modules_path), "%s/lib/modules/%s",
 		 machine->root_dir, version);
+
+	maps__set_modules_path_dir(&machine->kmaps, modules_path, 0);
+
+	dir = opendir("/pckg");
+	if (dir) {
+	    while ((dent = readdir(dir)) != NULL) {
+		if (dent->d_name[0] == '.') continue;
+		
+		snprintf(modules_path, sizeof(modules_path),
+			 "/pckg/%s/lib/modules/%s",
+			 dent->d_name, version);
+		maps__set_modules_path_dir(&machine->kmaps, modules_path, 1);
+	    }
+	    closedir(dir);
+	}
+
+	snprintf(modules_path, sizeof(modules_path), "/rw/lib/modules/%s",
+		 version);
+	maps__set_modules_path_dir(&machine->kmaps, modules_path, 1);
+
+	snprintf(modules_path, sizeof(modules_path), "/flash/lib/modules/%s",
+		 version);
+	maps__set_modules_path_dir(&machine->kmaps, modules_path, 1);
+
 	free(version);
 
+#if 0	
 	return maps__set_modules_path_dir(&machine->kmaps, modules_path, 0);
+#else	
+	return 0;
+#endif	
 }
 int __weak arch__fix_module_text_start(u64 *start __maybe_unused,
 				u64 *size __maybe_unused,

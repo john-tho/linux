@@ -320,6 +320,7 @@ void __init setup_arch(char **cmdline_p)
 	xen_early_init();
 	efi_init();
 	arm64_memblock_init();
+	memset(swapper_pg_dir, 0, PAGE_SIZE);
 
 	paging_init();
 

@@ -49,6 +49,7 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/if_ether.h>
+#include <linux/if_vlan.h>
 #include <linux/of_net.h>
 #include <linux/pci.h>
 #include <net/dst.h>
@@ -199,7 +200,7 @@ __be16 eth_type_trans(struct sk_buff *skb, struct net_device *dev)
 	 *      won't work for fault tolerant netware but does for the rest.
 	 */
 	sap = skb_header_pointer(skb, 0, sizeof(*sap), &_service_access_point);
-	if (sap && *sap == 0xFFFF)
+	if (sap && get_unaligned(sap) == 0xFFFF)
 		return htons(ETH_P_802_3);
 
 	/*

@@ -39,6 +39,9 @@
 
 #define MAX_TIMESTAMP (~0ULL)
 
+/* RB tree for quick conversion between traceID and metadata pointers */
+struct intlist *traceid_list;
+
 struct cs_etm_auxtrace {
 	struct auxtrace auxtrace;
 	struct auxtrace_queues queues;

@@ -72,6 +72,7 @@
 #include <linux/file.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/jhash.h>
 
 #include <linux/nsproxy.h>
 #include <net/net_namespace.h>
@@ -79,30 +80,17 @@
 #include <net/sock.h>
 
 #include <linux/uaccess.h>
-
-#define PPPOE_HASH_BITS 4
-#define PPPOE_HASH_SIZE (1 << PPPOE_HASH_BITS)
-#define PPPOE_HASH_MASK	(PPPOE_HASH_SIZE - 1)
+#include <asm/unaligned.h>
 
 static int __pppoe_xmit(struct sock *sk, struct sk_buff *skb);
 
 static const struct proto_ops pppoe_ops;
-static const struct ppp_channel_ops pppoe_chan_ops;
+struct ppp_channel_ops pppoe_chan_ops;
+EXPORT_SYMBOL(pppoe_chan_ops);
 
 /* per-net private data for this module */
-static unsigned int pppoe_net_id __read_mostly;
-struct pppoe_net {
-	/*
-	 * we could use _single_ hash table for all
-	 * nets by injecting net id into the hash but
-	 * it would increase hash chains and add
-	 * a few additional math comparations messy
-	 * as well, moreover in case of SMP less locking
-	 * controversy here
-	 */
-	struct pppox_sock *hash_table[PPPOE_HASH_SIZE];
-	rwlock_t hash_lock;
-};
+unsigned int pppoe_net_id __read_mostly;
+EXPORT_SYMBOL(pppoe_net_id);
 
 /*
  * PPPoE could be in the following stages:
@@ -129,26 +117,20 @@ static inline int cmp_2_addr(struct pppoe_addr *a, struct pppoe_addr *b)
 
 static inline int cmp_addr(struct pppoe_addr *a, __be16 sid, char *addr)
 {
-	return a->sid == sid && ether_addr_equal(a->remote, addr);
+	u16 *a1 = (u16 *) a->remote;
+	u16 *a2 = (u16 *) addr;
+
+	return a->sid == sid && a1[0] == a2[0] && a1[1] == a2[1] && a1[2] == a2[2];
 }
 
-#if 8 % PPPOE_HASH_BITS
-#error 8 must be a multiple of PPPOE_HASH_BITS
-#endif
-
-static int hash_item(__be16 sid, unsigned char *addr)
+static inline int hash_item(__be16 sid, unsigned char *addr)
 {
-	unsigned char hash = 0;
-	unsigned int i;
+	return (sid ^ *(u16 *) (addr + 4)) % PPPOE_HASH_SIZE;
+}
 
-	for (i = 0; i < ETH_ALEN; i++)
-		hash ^= addr[i];
-	for (i = 0; i < sizeof(sid_t) * 8; i += 8)
-		hash ^= (__force __u32)sid >> i;
-	for (i = 8; (i >>= 1) >= PPPOE_HASH_BITS;)
-		hash ^= hash >> i;
-
-	return hash & PPPOE_HASH_MASK;
+static void nf_bridge_info_free(struct sk_buff *skb)
+{
+	skb_ext_del(skb, SKB_EXT_BRIDGE_NF);
 }
 
 /**********************************************************************
@@ -156,19 +138,17 @@ static int hash_item(__be16 sid, unsigned char *addr)
  *  Set/get/delete/rehash items  (internal versions)
  *
  **********************************************************************/
-static struct pppox_sock *__get_item(struct pppoe_net *pn, __be16 sid,
+static struct pppox_sock *get_item(struct pppoe_net *pn, __be16 sid,
 				unsigned char *addr, int ifindex)
 {
 	int hash = hash_item(sid, addr);
-	struct pppox_sock *ret;
+	struct pppox_sock *sock;
 
-	ret = pn->hash_table[hash];
-	while (ret) {
-		if (cmp_addr(&ret->pppoe_pa, sid, addr) &&
-		    ret->pppoe_ifindex == ifindex)
-			return ret;
+	hlist_for_each_entry_rcu(sock, &pn->hash_table[hash], hash_next) {
+		if (cmp_addr(&sock->pppoe_pa, sid, addr) &&
+		    sock->pppoe_ifindex == ifindex)
+			return sock;
 
-		ret = ret->next;
 	}
 
 	return NULL;
@@ -177,42 +157,16 @@ static struct pppox_sock *__get_item(struct pppoe_net *pn, __be16 sid,
 static int __set_item(struct pppoe_net *pn, struct pppox_sock *po)
 {
 	int hash = hash_item(po->pppoe_pa.sid, po->pppoe_pa.remote);
-	struct pppox_sock *ret;
+	struct pppox_sock *sock;
 
-	ret = pn->hash_table[hash];
-	while (ret) {
-		if (cmp_2_addr(&ret->pppoe_pa, &po->pppoe_pa) &&
-		    ret->pppoe_ifindex == po->pppoe_ifindex)
+	hlist_for_each_entry(sock, &pn->hash_table[hash], hash_next) {
+		if (cmp_2_addr(&sock->pppoe_pa, &po->pppoe_pa) &&
+		    sock->pppoe_ifindex == po->pppoe_ifindex)
 			return -EALREADY;
-
-		ret = ret->next;
 	}
 
-	po->next = pn->hash_table[hash];
-	pn->hash_table[hash] = po;
-
+	hlist_add_head_rcu(&po->hash_next, &pn->hash_table[hash]);
 	return 0;
-}
-
-static void __delete_item(struct pppoe_net *pn, __be16 sid,
-					char *addr, int ifindex)
-{
-	int hash = hash_item(sid, addr);
-	struct pppox_sock *ret, **src;
-
-	ret = pn->hash_table[hash];
-	src = &pn->hash_table[hash];
-
-	while (ret) {
-		if (cmp_addr(&ret->pppoe_pa, sid, addr) &&
-		    ret->pppoe_ifindex == ifindex) {
-			*src = ret->next;
-			break;
-		}
-
-		src = &ret->next;
-		ret = ret->next;
-	}
 }
 
 /**********************************************************************
@@ -220,20 +174,6 @@ static void __delete_item(struct pppoe_net *pn, __be16 sid,
  *  Set/get/delete/rehash items
  *
  **********************************************************************/
-static inline struct pppox_sock *get_item(struct pppoe_net *pn, __be16 sid,
-					unsigned char *addr, int ifindex)
-{
-	struct pppox_sock *po;
-
-	read_lock_bh(&pn->hash_lock);
-	po = __get_item(pn, sid, addr, ifindex);
-	if (po)
-		sock_hold(sk_pppox(po));
-	read_unlock_bh(&pn->hash_lock);
-
-	return po;
-}
-
 static inline struct pppox_sock *get_item_by_addr(struct net *net,
 						struct sockaddr_pppox *sp)
 {
@@ -250,16 +190,19 @@ static inline struct pppox_sock *get_item_by_addr(struct net *net,
 		pn = pppoe_pernet(net);
 		pppox_sock = get_item(pn, sp->sa_addr.pppoe.sid,
 				sp->sa_addr.pppoe.remote, ifindex);
+		sock_hold(sk_pppox(pppox_sock));
 	}
 	rcu_read_unlock();
 	return pppox_sock;
 }
 
-static inline void delete_item(struct pppoe_net *pn, __be16 sid,
-					char *addr, int ifindex)
+static inline void delete_item(struct pppoe_net *pn, struct pppox_sock *po)
 {
 	write_lock_bh(&pn->hash_lock);
-	__delete_item(pn, sid, addr, ifindex);
+	if (!hlist_unhashed(&po->hash_next)) {
+		hlist_del_rcu(&po->hash_next);
+		INIT_HLIST_NODE(&po->hash_next);
+	}
 	write_unlock_bh(&pn->hash_lock);
 }
 
@@ -278,16 +221,12 @@ static void pppoe_flush_dev(struct net_device *dev)
 	pn = pppoe_pernet(dev_net(dev));
 	write_lock_bh(&pn->hash_lock);
 	for (i = 0; i < PPPOE_HASH_SIZE; i++) {
-		struct pppox_sock *po = pn->hash_table[i];
+		struct pppox_sock *po;
 		struct sock *sk;
 
-		while (po) {
-			while (po && po->pppoe_dev != dev) {
-				po = po->next;
-			}
-
-			if (!po)
-				break;
+		hlist_for_each_entry(po, &pn->hash_table[i], hash_next) {
+			if (po->pppoe_dev != dev)
+				continue;
 
 			sk = sk_pppox(po);
 
@@ -321,7 +260,6 @@ static void pppoe_flush_dev(struct net_device *dev)
 
 			BUG_ON(pppoe_pernet(dev_net(dev)) == NULL);
 			write_lock_bh(&pn->hash_lock);
-			po = pn->hash_table[i];
 		}
 	}
 	write_unlock_bh(&pn->hash_lock);
@@ -335,7 +273,10 @@ static int pppoe_device_event(struct notifier_block *this,
 	/* Only look at sockets that are using this specific device. */
 	switch (event) {
 	case NETDEV_CHANGEADDR:
+#if 0
+// XXX: pppoe sessions will be reconnected by userspace on mtu changes to lesser value
 	case NETDEV_CHANGEMTU:
+#endif
 		/* A change in mtu or address is a bad thing, requiring
 		 * LCP re-negotiation.
 		 */
@@ -417,6 +358,7 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 	struct pppox_sock *po;
 	struct pppoe_net *pn;
 	int len;
+	int rc;
 
 	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (!skb)
@@ -444,12 +386,16 @@ static int pppoe_rcv(struct sk_buff *skb, struct net_device *dev,
 	/* Note that get_item does a sock_hold(), so sk_pppox(po)
 	 * is known to be safe.
 	 */
+	rcu_read_lock();
 	po = get_item(pn, ph->sid, eth_hdr(skb)->h_source, dev->ifindex);
 	if (!po)
-		goto drop;
+		goto rcu_drop;
+	rc = pppoe_rcv_core(sk_pppox(po), skb);
+	rcu_read_unlock();
+	return rc;
 
-	return sk_receive_skb(sk_pppox(po), skb, 0);
-
+rcu_drop:
+	rcu_read_unlock();
 drop:
 	kfree_skb(skb);
 out:
@@ -497,11 +443,15 @@ static int pppoe_disc_rcv(struct sk_buff *skb, struct net_device *dev,
 	if (ph->code != PADT_CODE)
 		goto abort;
 
+	rcu_read_lock();
 	pn = pppoe_pernet(dev_net(dev));
 	po = get_item(pn, ph->sid, eth_hdr(skb)->h_source, dev->ifindex);
-	if (po)
+	if (po) {
+		sock_hold(sk_pppox(po));
 		if (!schedule_work(&po->proto.pppoe.padt_work))
 			sock_put(sk_pppox(po));
+	}
+	rcu_read_unlock();
 
 abort:
 	kfree_skb(skb);
@@ -555,6 +505,11 @@ static int pppoe_create(struct net *net, struct socket *sock, int kern)
 	return 0;
 }
 
+static void sock_put_rcu(struct rcu_head *rcu)
+{
+	sock_put(&container_of(rcu, struct pppox_sock, rcu)->sk);
+}
+
 static int pppoe_release(struct socket *sock)
 {
 	struct sock *sk = sock->sk;
@@ -590,15 +545,14 @@ static int pppoe_release(struct socket *sock)
 	 * protect "po" from concurrent updates
 	 * on pppoe_flush_dev
 	 */
-	delete_item(pn, po->pppoe_pa.sid, po->pppoe_pa.remote,
-		    po->pppoe_ifindex);
+	delete_item(pn, po);
 
 	sock_orphan(sk);
 	sock->sk = NULL;
 
 	skb_queue_purge(&sk->sk_receive_queue);
 	release_sock(sk);
-	sock_put(sk);
+	call_rcu(&po->rcu, sock_put_rcu);
 
 	return 0;
 }
@@ -642,8 +596,8 @@ static int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
 	if (stage_session(po->pppoe_pa.sid)) {
 		pppox_unbind_sock(sk);
 		pn = pppoe_pernet(sock_net(sk));
-		delete_item(pn, po->pppoe_pa.sid,
-			    po->pppoe_pa.remote, po->pppoe_ifindex);
+		delete_item(pn, po);
+		synchronize_rcu();
 		if (po->pppoe_dev) {
 			dev_put(po->pppoe_dev);
 			po->pppoe_dev = NULL;
@@ -653,7 +607,6 @@ static int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
 		memset(&po->pppoe_pa, 0, sizeof(po->pppoe_pa));
 		memset(&po->pppoe_relay, 0, sizeof(po->pppoe_relay));
 		memset(&po->chan, 0, sizeof(po->chan));
-		po->next = NULL;
 		po->num = 0;
 
 		sk->sk_state = PPPOX_NONE;
@@ -693,8 +646,7 @@ static int pppoe_connect(struct socket *sock, struct sockaddr *uservaddr,
 
 		error = ppp_register_net_channel(dev_net(dev), &po->chan);
 		if (error) {
-			delete_item(pn, po->pppoe_pa.sid,
-				    po->pppoe_pa.remote, po->pppoe_ifindex);
+			delete_item(pn, po);
 			goto err_put;
 		}
 
@@ -911,6 +863,7 @@ static int __pppoe_xmit(struct sock *sk, struct sk_buff *skb)
 	struct pppox_sock *po = pppox_sk(sk);
 	struct net_device *dev = po->pppoe_dev;
 	struct pppoe_hdr *ph;
+	struct ethhdr *eth;
 	int data_len = skb->len;
 
 	/* The higher-level PPP code (ppp_unregister_channel()) ensures the PPP
@@ -926,6 +879,8 @@ static int __pppoe_xmit(struct sock *sk, struct sk_buff *skb)
 
 	if (!dev)
 		goto abort;
+
+	nf_bridge_info_free(skb);
 
 	/* Copy the data if there is no space for the header or if it's
 	 * read-only.
@@ -946,8 +901,13 @@ static int __pppoe_xmit(struct sock *sk, struct sk_buff *skb)
 	skb->protocol = cpu_to_be16(ETH_P_PPP_SES);
 	skb->dev = dev;
 
-	dev_hard_header(skb, dev, ETH_P_PPP_SES,
-			po->pppoe_pa.remote, NULL, data_len);
+	eth = (struct ethhdr *) __skb_push(skb, ETH_HLEN);
+	eth->h_proto = htons(ETH_P_PPP_SES);
+	memcpy(eth->h_source, dev->dev_addr, ETH_ALEN);
+	memcpy(eth->h_dest, po->pppoe_pa.remote, ETH_ALEN);
+
+	if (dev->l2mtu && skb->len > dev->l2mtu + ETH_HLEN)
+		goto abort;
 
 	dev_queue_xmit(skb);
 	return 1;
@@ -963,14 +923,16 @@ abort:
  * sends PPP frame over PPPoE socket
  *
  ***********************************************************************/
-static int pppoe_xmit(struct ppp_channel *chan, struct sk_buff *skb)
+int pppoe_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 {
 	struct sock *sk = (struct sock *)chan->private;
 	return __pppoe_xmit(sk, skb);
 }
+EXPORT_SYMBOL(pppoe_xmit);
 
-static const struct ppp_channel_ops pppoe_chan_ops = {
+struct ppp_channel_ops pppoe_chan_ops = {
 	.start_xmit = pppoe_xmit,
+	.lockless = 1,
 };
 
 static int pppoe_recvmsg(struct socket *sock, struct msghdr *m,
@@ -1005,6 +967,7 @@ end:
 }
 
 #ifdef CONFIG_PROC_FS
+#if 0
 static int pppoe_seq_show(struct seq_file *seq, void *v)
 {
 	struct pppox_sock *po;
@@ -1093,6 +1056,7 @@ static const struct seq_operations pppoe_seq_ops = {
 	.stop		= pppoe_seq_stop,
 	.show		= pppoe_seq_show,
 };
+#endif
 #endif /* CONFIG_PROC_FS */
 
 static const struct proto_ops pppoe_ops = {
@@ -1127,15 +1091,19 @@ static const struct pppox_proto pppoe_proto = {
 static __net_init int pppoe_init_net(struct net *net)
 {
 	struct pppoe_net *pn = pppoe_pernet(net);
+#if 0
 	struct proc_dir_entry *pde;
+#endif
 
 	rwlock_init(&pn->hash_lock);
 
+#if 0
 	pde = proc_create_net("pppoe", 0444, net->proc_net,
 			&pppoe_seq_ops, sizeof(struct seq_net_private));
 #ifdef CONFIG_PROC_FS
 	if (!pde)
 		return -ENOMEM;
+#endif
 #endif
 
 	return 0;

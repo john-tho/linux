@@ -215,4 +215,13 @@ config BCH_CONST_T
 	default 4
 endif
 
+config MTD_TILE_SROM
+	tristate "MTD driver for Tilera SROM"
+	depends on MTD && TILE
+	default y
+	---help---
+	  This device provides access to the SROM on Tilera chips through
+	  an MTD driver.  It requires the "srom_mtd" hypervisor driver to be
+	  loaded instead of the "srom" driver.
+
 endmenu

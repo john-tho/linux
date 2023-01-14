@@ -25,6 +25,7 @@
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 
 #define MV64XXX_I2C_ADDR_ADDR(val)			((val & 0x7f) << 1)
 #define MV64XXX_I2C_BAUD_DIV_N(val)			(val & 0x7)
@@ -147,6 +148,7 @@ struct mv64xxx_i2c_data {
 	bool			irq_clear_inverted;
 	/* Clk div is 2 to the power n, not 2 to the power n + 1 */
 	bool			clk_n_base_0;
+	struct gpio_desc	*mux_rst;
 };
 
 static struct mv64xxx_i2c_regs mv64xxx_i2c_regs_mv64xxx = {
@@ -562,6 +564,11 @@ mv64xxx_i2c_wait_for_completion(struct mv64xxx_i2c_data *drv_data)
 				"mv64xxx: I2C bus locked, block: %d, "
 				"time_left: %d\n", drv_data->block,
 				(int)time_left);
+			if (drv_data->mux_rst) {
+				gpiod_set_value_cansleep(drv_data->mux_rst, 1);
+				udelay(10);
+				gpiod_set_value_cansleep(drv_data->mux_rst, 0);
+			}
 			mv64xxx_i2c_hw_init(drv_data);
 		}
 	} else
@@ -927,6 +934,12 @@ mv64xxx_i2c_probe(struct platform_device *pd)
 	}
 	if (drv_data->irq < 0) {
 		rc = drv_data->irq;
+		goto exit_reset;
+	}
+
+	drv_data->mux_rst = devm_gpiod_get_optional(&pd->dev, "mux-rst", GPIOD_OUT_LOW);
+	if (IS_ERR(drv_data->mux_rst)) {
+		rc = PTR_ERR(drv_data->mux_rst);
 		goto exit_reset;
 	}
 

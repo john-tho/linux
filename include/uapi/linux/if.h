@@ -96,7 +96,7 @@ enum net_device_flags {
 	IFF_SLAVE			= 1<<11, /* volatile */
 	IFF_MULTICAST			= 1<<12, /* sysfs */
 	IFF_PORTSEL			= 1<<13, /* sysfs */
-	IFF_AUTOMEDIA			= 1<<14, /* sysfs */
+	IFF_NOARP4			= 1<<14, /* sysfs */
 	IFF_DYNAMIC			= 1<<15, /* sysfs */
 #endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS */
 #if __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO
@@ -104,6 +104,7 @@ enum net_device_flags {
 	IFF_DORMANT			= 1<<17, /* volatile */
 	IFF_ECHO			= 1<<18, /* volatile */
 #endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO */
+	IFF_AUTOMEDIA			= 1<<19, /* sysfs */
 };
 #endif /* __UAPI_DEF_IF_NET_DEVICE_FLAGS_LOWER_UP_DORMANT_ECHO != 0 || __UAPI_DEF_IF_NET_DEVICE_FLAGS != 0 */
 
@@ -147,6 +148,7 @@ enum net_device_flags {
 #define IF_IFACE_E1	0x1004		/* E1 telco serial interface	*/
 #define IF_IFACE_SYNC_SERIAL 0x1005	/* can't be set by software	*/
 #define IF_IFACE_X21D   0x1006          /* X.21 Dual Clocking (FarSite) */
+#define IF_IFACE_SHDSL  0x1007          /* SHDSL (FarSite)              */
 
 /* For definitions see hdlc.h */
 #define IF_PROTO_HDLC	0x2000		/* raw HDLC protocol		*/

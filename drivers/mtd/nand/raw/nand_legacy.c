@@ -269,6 +269,10 @@ static void nand_command(struct nand_chip *chip, unsigned int command,
 		chip->legacy.cmd_ctrl(chip, readcmd, ctrl);
 		ctrl &= ~NAND_CTRL_CHANGE;
 	}
+	else if (command == NAND_CMD_READ0 && (column & 0x100)) {
+		command = NAND_CMD_READ1;
+		column -= 256;
+	}
 	if (command != NAND_CMD_NONE)
 		chip->legacy.cmd_ctrl(chip, command, ctrl);
 
@@ -304,7 +308,10 @@ static void nand_command(struct nand_chip *chip, unsigned int command,
 	case NAND_CMD_ERASE1:
 	case NAND_CMD_ERASE2:
 	case NAND_CMD_SEQIN:
+		return;
 	case NAND_CMD_STATUS:
+		ndelay(60);	/* wait tWHR */
+		return;
 	case NAND_CMD_READID:
 	case NAND_CMD_SET_FEATURES:
 		return;
@@ -317,6 +324,7 @@ static void nand_command(struct nand_chip *chip, unsigned int command,
 				      NAND_CTRL_CLE | NAND_CTRL_CHANGE);
 		chip->legacy.cmd_ctrl(chip, NAND_CMD_NONE,
 				      NAND_NCE | NAND_CTRL_CHANGE);
+		ndelay(60);	/* wait tWHR */
 		/* EZ-NAND can take upto 250ms as per ONFi v4.0 */
 		nand_wait_status_ready(chip, 250);
 		return;
@@ -437,14 +445,12 @@ static void nand_command_lp(struct nand_chip *chip, unsigned int command,
 	case NAND_CMD_PAGEPROG:
 	case NAND_CMD_ERASE1:
 	case NAND_CMD_ERASE2:
-	case NAND_CMD_SEQIN:
 	case NAND_CMD_STATUS:
-	case NAND_CMD_READID:
-	case NAND_CMD_SET_FEATURES:
+		ndelay(60);	/* wait tWHR */
 		return;
 
-	case NAND_CMD_RNDIN:
-		nand_ccs_delay(chip);
+	case NAND_CMD_SEQIN:
+		ndelay(70);	/* wait tADL */
 		return;
 
 	case NAND_CMD_RESET:
@@ -455,6 +461,7 @@ static void nand_command_lp(struct nand_chip *chip, unsigned int command,
 				      NAND_NCE | NAND_CLE | NAND_CTRL_CHANGE);
 		chip->legacy.cmd_ctrl(chip, NAND_CMD_NONE,
 				      NAND_NCE | NAND_CTRL_CHANGE);
+		ndelay(60);	/* wait tWHR */
 		/* EZ-NAND can take upto 250ms as per ONFi v4.0 */
 		nand_wait_status_ready(chip, 250);
 		return;
@@ -569,6 +576,11 @@ static int nand_wait(struct nand_chip *chip)
 	if (ret)
 		return ret;
 
+	if (!(status & NAND_STATUS_READY)) {
+		mdelay(1);
+		nand_read_data_op(chip, &status, sizeof(status), true);
+	}
+	
 	/* This can happen if in case of timeout or buggy dev_ready */
 	WARN_ON(!(status & NAND_STATUS_READY));
 	return status;

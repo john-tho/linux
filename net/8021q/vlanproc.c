@@ -140,6 +140,9 @@ int vlan_proc_add_dev(struct net_device *vlandev)
 
 	if (!strcmp(vlandev->name, name_conf))
 		return -EINVAL;
+	if (vlan->dent)
+		return 0;
+
 	vlan->dent = proc_create_single_data(vlandev->name, S_IFREG | 0600,
 			vn->proc_vlan_dir, vlandev_seq_show, vlandev);
 	if (!vlan->dent)

@@ -561,6 +561,16 @@ config CRYPTO_DEV_ATMEL_ECC
 	  To compile this driver as a module, choose M here: the module
 	  will be called atmel-ecc.
 
+config CRYPTO_DEV_TILE
+	tristate "Support for Tilera cryptographic accelerators"
+	depends on TILEGX
+	select CRYPTO_ALGAPI
+	select CRYPTO_AUTHENC
+	select TILE_GXIO_GXCR
+	help
+	  Select this option if you want to use the Tilera MiCA coprocessor to
+	  perform hardware acceleration of cryptographic operations.
+
 config CRYPTO_DEV_ATMEL_SHA204A
 	tristate "Support for Microchip / Atmel SHA accelerator and RNG"
 	depends on I2C

@@ -57,6 +57,9 @@ static int rx_copybreak;
    power state D3 so PXE booting fails. bootparam(7): via-rhine.avoid_D3=1 */
 static bool avoid_D3;
 
+/* Work-around for systems, where link should be on immediately after enable */
+static int disable_sleep_mode;
+
 /*
  * In case you are looking for 'options[]' or 'full_duplex[]', they
  * are gone. Use ethtool(8) instead.
@@ -110,6 +113,7 @@ static const int multicast_filter_limit = 32;
 #include <linux/crc32.h>
 #include <linux/if_vlan.h>
 #include <linux/bitops.h>
+#include <linux/rtnetlink.h>
 #include <linux/workqueue.h>
 #include <asm/processor.h>	/* Processor type for cache alignment. */
 #include <asm/io.h>
@@ -120,6 +124,10 @@ static const int multicast_filter_limit = 32;
 /* These identify the driver base version and may not be removed. */
 static const char version[] =
 	"v1.10-LK" DRV_VERSION " " DRV_RELDATE " Written by Donald Becker";
+
+#ifdef CONFIG_MIPS_MIKROTIK
+#undef CONFIG_VIA_RHINE_MMIO
+#endif
 
 MODULE_AUTHOR("Donald Becker <becker@scyld.com>");
 MODULE_DESCRIPTION("VIA Rhine PCI Fast Ethernet driver");
@@ -460,6 +468,7 @@ struct rhine_private {
 	int irq;
 	long pioaddr;
 	struct net_device *dev;
+	struct pci_dev *pdev;
 	struct napi_struct napi;
 	spinlock_t lock;
 	struct mutex task_lock;
@@ -877,9 +886,11 @@ static void rhine_hw_init(struct net_device *dev, long pioaddr)
 	if (rp->quirks & rqRhineI)
 		msleep(5);
 
+#if !defined CONFIG_MIPS_MIKROTIK && !defined CONFIG_RB_PPC
 	/* Reload EEPROM controlled bytes cleared by soft reset */
 	if (dev_is_pci(dev->dev.parent))
 		rhine_reload_eeprom(pioaddr, dev);
+#endif
 }
 
 static const struct net_device_ops rhine_netdev_ops = {
@@ -899,7 +910,8 @@ static const struct net_device_ops rhine_netdev_ops = {
 #endif
 };
 
-static int rhine_init_one_common(struct device *hwdev, u32 quirks,
+static int rhine_init_one_common(struct device *hwdev, struct pci_dev *pdev,
+				 u32 quirks,
 				 long pioaddr, void __iomem *ioaddr, int irq)
 {
 	struct net_device *dev;
@@ -923,6 +935,7 @@ static int rhine_init_one_common(struct device *hwdev, u32 quirks,
 
 	rp = netdev_priv(dev);
 	rp->dev = dev;
+	rp->pdev = pdev;
 	rp->quirks = quirks;
 	rp->pioaddr = pioaddr;
 	rp->base = ioaddr;
@@ -970,6 +983,8 @@ static int rhine_init_one_common(struct device *hwdev, u32 quirks,
 	dev->watchdog_timeo = TX_TIMEOUT;
 
 	netif_napi_add(dev, &rp->napi, rhine_napipoll, 64);
+
+	dev->l2mtu = 1600;
 
 	if (rp->quirks & rqRhineI)
 		dev->features |= NETIF_F_SG|NETIF_F_HW_CSUM;
@@ -1022,6 +1037,16 @@ static int rhine_init_one_common(struct device *hwdev, u32 quirks,
 	rp->mii_if.phy_id = phy_id;
 	if (avoid_D3)
 		netif_info(rp, probe, dev, "No D3 power state at shutdown\n");
+
+#if 0
+	if (!disable_sleep_mode && pdev) {
+		/* shut down until somebody really needs it */
+		rtnl_lock();
+		iowrite8(0x80, ioaddr + 0xa1);
+		pci_set_power_state(pdev, PCI_D3hot);
+		rtnl_unlock();
+	}
+#endif
 
 	return 0;
 
@@ -1107,7 +1132,7 @@ static int rhine_init_one_pci(struct pci_dev *pdev,
 	if (rc)
 		goto err_out_unmap;
 
-	rc = rhine_init_one_common(&pdev->dev, quirks,
+	rc = rhine_init_one_common(&pdev->dev, pdev, quirks,
 				   pioaddr, ioaddr, pdev->irq);
 	if (!rc)
 		return 0;
@@ -1145,7 +1170,7 @@ static int rhine_init_one_platform(struct platform_device *pdev)
 	if (!quirks)
 		return -EINVAL;
 
-	return rhine_init_one_common(&pdev->dev, *quirks,
+	return rhine_init_one_common(&pdev->dev, NULL, *quirks,
 				     (long)ioaddr, ioaddr, irq);
 }
 
@@ -1260,7 +1285,7 @@ static int alloc_rbufs(struct net_device *dev)
 	dma_addr_t next;
 	int rc, i;
 
-	rp->rx_buf_sz = (dev->mtu <= 1500 ? PKT_BUF_SZ : dev->mtu + 32);
+	rp->rx_buf_sz = 1600 + 32;
 	next = rp->rx_ring_dma;
 
 	/* Init the ring entries */
@@ -1690,6 +1715,13 @@ static int rhine_open(struct net_device *dev)
 	struct rhine_private *rp = netdev_priv(dev);
 	void __iomem *ioaddr = rp->base;
 	int rc;
+
+	if (rp->pdev) {
+		rc = pci_enable_device(rp->pdev);
+		if (rc)
+			return rc;
+		pci_set_power_state(rp->pdev, PCI_D0);
+	}
 
 	rc = request_irq(rp->irq, rhine_interrupt, IRQF_SHARED, dev->name, dev);
 	if (rc)
@@ -2122,7 +2154,7 @@ static int rhine_rx(struct net_device *dev, int limit)
 
 				dma_unmap_single(hwdev,
 						 rp->rx_skbuff_dma[entry],
-						 rp->rx_buf_sz,
+						 pkt_len,
 						 DMA_FROM_DEVICE);
 				rhine_skb_dma_nic_store(rp, &sd, entry);
 			}
@@ -2437,6 +2469,13 @@ static int rhine_close(struct net_device *dev)
 	free_rbufs(dev);
 	free_tbufs(dev);
 	free_ring(dev);
+
+/*
+	if (!disable_sleep_mode && rp->pdev) {
+		iowrite8(0x80, ioaddr + 0xa1);
+		pci_set_power_state(rp->pdev, PCI_D3hot);
+	}
+*/
 
 	return 0;
 }

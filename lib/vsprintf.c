@@ -964,6 +964,15 @@ char *symbol_string(char *buf, char *end, void *ptr,
 
 	return string_nocheck(buf, end, sym, spec);
 #else
+	{
+	    struct module *mod = __module_address(value);
+	    if (mod) {
+		char sym[KSYM_SYMBOL_LEN];
+		sprintf(sym, "0x%lx [%s@0x%lx]",
+			value, mod->name, (unsigned long)mod->core_layout.base);
+		return string_nocheck(buf, end, sym, spec);
+	    }
+	}
 	return special_hex_number(buf, end, value, sizeof(void *));
 #endif
 }

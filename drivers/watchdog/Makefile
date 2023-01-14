@@ -199,6 +199,9 @@ obj-$(CONFIG_WATCHDOG_RIO)		+= riowd.o
 obj-$(CONFIG_WATCHDOG_CP1XXX)		+= cpwd.o
 obj-$(CONFIG_WATCHDOG_SUN4V)		+= sun4v_wdt.o
 
+# TILE Architecture
+obj-$(CONFIG_WATCHDOG_TILE) += tile_wdt.o
+
 # XTENSA Architecture
 
 # Xen

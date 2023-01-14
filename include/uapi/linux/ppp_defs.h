@@ -41,6 +41,7 @@
 #define PPP_IPX		0x2b	/* IPX protocol */
 #define	PPP_VJC_COMP	0x2d	/* VJ compressed TCP */
 #define	PPP_VJC_UNCOMP	0x2f	/* VJ uncompressed TCP */
+#define PPP_BRIDGE	0x31	/* Bridged ethernet */
 #define PPP_MP		0x3d	/* Multilink protocol */
 #define PPP_IPV6	0x57	/* Internet Protocol Version 6 */
 #define PPP_COMPFRAG	0xfb	/* fragment compressed below bundle */
@@ -103,17 +104,6 @@ struct pppstat	{
     __u32	ppp_olqrs;	/* # LQR frames sent */
 };
 
-struct vjstat {
-    __u32	vjs_packets;	/* outbound packets */
-    __u32	vjs_compressed;	/* outbound compressed packets */
-    __u32	vjs_searches;	/* searches for connection state */
-    __u32	vjs_misses;	/* times couldn't find conn. state */
-    __u32	vjs_uncompressedin; /* inbound uncompressed packets */
-    __u32	vjs_compressedin;   /* inbound compressed packets */
-    __u32	vjs_errorin;	/* inbound unknown type packets */
-    __u32	vjs_tossed;	/* inbound packets tossed because of error */
-};
-
 struct compstat {
     __u32	unc_bytes;	/* total uncompressed bytes */
     __u32	unc_packets;	/* total uncompressed packets */
@@ -131,7 +121,6 @@ struct compstat {
 
 struct ppp_stats {
     struct pppstat	p;	/* basic PPP statistics */
-    struct vjstat	vj;	/* VJ header compression statistics */
 };
 
 struct ppp_comp_stats {
@@ -148,8 +137,8 @@ struct ppp_comp_stats {
  * based on the libc time_t.
  */
 struct ppp_idle {
-    __kernel_old_time_t xmit_idle;	/* time since last NP packet sent */
-    __kernel_old_time_t recv_idle;	/* time since last NP packet received */
+    __u32 xmit_idle;	/* time since last NP packet sent */
+    __u32 recv_idle;	/* time since last NP packet received */
 };
 
 struct ppp_idle32 {

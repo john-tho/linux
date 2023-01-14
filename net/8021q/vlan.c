@@ -176,6 +176,8 @@ int register_vlan_dev(struct net_device *dev, struct netlink_ext_ack *extack)
 	if (err < 0)
 		goto out_uninit_mvrp;
 
+	__module_get(THIS_MODULE);
+
 	err = netdev_upper_dev_link(real_dev, dev, extack);
 	if (err)
 		goto out_unregister_netdev;
@@ -210,7 +212,8 @@ out_vid_del:
 /*  Attach a VLAN device to a mac address (ie Ethernet Card).
  *  Returns 0 if the device was created or a negative error code otherwise.
  */
-static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
+static int register_vlan_device(struct net_device *real_dev, u16 vlan_id,
+				__be16 vlan_proto)
 {
 	struct net_device *new_dev;
 	struct vlan_dev_priv *vlan;
@@ -222,8 +225,10 @@ static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 	if (vlan_id >= VLAN_VID_MASK)
 		return -ERANGE;
 
-	err = vlan_check_real_dev(real_dev, htons(ETH_P_8021Q), vlan_id,
-				  NULL);
+	if (vlan_proto == 0)
+		vlan_proto = htons(ETH_P_8021Q);
+
+	err = vlan_check_real_dev(real_dev, vlan_proto, vlan_id, NULL);
 	if (err < 0)
 		return err;
 
@@ -266,7 +271,7 @@ static int register_vlan_device(struct net_device *real_dev, u16 vlan_id)
 	new_dev->mtu = real_dev->mtu;
 
 	vlan = vlan_dev_priv(new_dev);
-	vlan->vlan_proto = htons(ETH_P_8021Q);
+	vlan->vlan_proto = vlan_proto;
 	vlan->vlan_id = vlan_id;
 	vlan->real_dev = real_dev;
 	vlan->dent = NULL;
@@ -496,6 +501,18 @@ static int vlan_device_event(struct notifier_block *unused, unsigned long event,
 			return NOTIFY_BAD;
 		break;
 
+	case NETDEV_CHANGEL2MTU:
+		/* update l2mtu for VLANs */
+		vlan_group_for_each_dev(grp, i, vlandev) {
+			int l2mtu = (dev->l2mtu > 4) ? (dev->l2mtu - 4) : 0;
+			if (l2mtu != vlandev->l2mtu) {
+				vlandev->l2mtu = l2mtu;
+				if (vlandev->flags & IFF_UP)
+					netdev_l2mtu_change(vlandev);
+			}
+		}
+		break;
+
 	case NETDEV_NOTIFY_PEERS:
 	case NETDEV_BONDING_FAILOVER:
 	case NETDEV_RESEND_IGMP:
@@ -619,7 +636,7 @@ static int vlan_ioctl_handler(struct net *net, void __user *arg)
 		err = -EPERM;
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			break;
-		err = register_vlan_device(dev, args.u.VID);
+		err = register_vlan_device(dev, args.u.VID, args.vlan_proto);
 		break;
 
 	case DEL_VLAN_CMD:

@@ -3,6 +3,9 @@
 # Makefile for the Linux Traffic Control Unit.
 #
 
+CFLAGS_sch_generic.o := -O2
+CFLAGS_sch_htb.o := -O2
+
 obj-y	:= sch_generic.o sch_mq.o
 
 obj-$(CONFIG_NET_SCHED)		+= sch_api.o sch_blackhole.o

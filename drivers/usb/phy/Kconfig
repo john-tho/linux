@@ -138,6 +138,39 @@ config USB_ISP1301
 	  To compile this driver as a module, choose M here: the
 	  module will be called phy-isp1301.
 
+config USB_QCOM_QUSB_PHY
+	tristate "Qualcomm QUSB HS PHY driver support"
+	depends on (USB || USB_GADGET) && ARCH_QCOM
+	select USB_PHY
+	help
+	  Enable this to support QUSB HS PHY transceivers on QCOM chips
+	  with DWC3 USB core. It handles PHY initialization, clock
+	  management required after resetting the hardware and power
+	  management. This driver is required even for peripheral only or
+	  host only mode configurations.
+
+config USB_QCOM_QMP_PHY
+	tristate "Qualcomm QMP SS PHY support"
+	depends on (USB || USB_GADGET) && ARCH_QCOM
+	select USB_PHY
+	help
+	  Enable this to support QMP SS PHY transceivers on QCOM chips
+	  with DWC3 USB core. It handles PHY initialization, clock
+	  management required after resetting the hardware and power
+	  management. This driver is required even for peripheral only or
+	  host only mode configurations.
+
+config USB_MV_OTG
+	tristate "Marvell USB OTG support"
+	depends on USB_EHCI_MV && USB_MV_UDC && PM && USB_OTG
+	select USB_PHY
+	help
+	  Say Y here if you want to build Marvell USB OTG transciever
+	  driver in kernel (including PXA and MMP series). This driver
+	  implements role switch between EHCI host driver and gadget driver.
+
+	  To compile this driver as a module, choose M here.
+
 config USB_MV_OTG
 	tristate "Marvell USB OTG support"
 	depends on USB_EHCI_MV && USB_MV_UDC && PM && USB_OTG
@@ -183,5 +216,27 @@ config USB_ULPI_VIEWPORT
 	help
 	  Provides read/write operations to the ULPI phy register set for
 	  controllers with a viewport register (e.g. Chipidea/ARC controllers).
+
+config USB_IPQ40XX_PHY
+	tristate "IPQ40XX PHY wrappers support"
+	depends on (USB || USB_GADGET) && ARCH_QCOM
+	select USB_PHY
+	help
+	  Enable this to support the USB PHY transceivers on IPQ40XX chips.
+	  It handles PHY initialization, clock management required after
+	  resetting the hardware and power management.
+	  This driver is required even for peripheral only or host only
+	  mode configurations.
+
+config USB_QCA_M31_PHY
+        tristate "QTI M31 HS PHY driver support"
+        depends on (USB || USB_GADGET) && ARCH_QCOM
+        select USB_PHY
+        help
+          Enable this to support M31 HS PHY transceivers on QCOM chips
+          with DWC3 USB core. It handles PHY initialization, clock
+          management required after resetting the hardware and power
+          management. This driver is required even for peripheral only or
+          host only mode configurations.
 
 endmenu

@@ -2650,6 +2650,7 @@ static int marvell_nand_chip_init(struct device *dev, struct marvell_nfc *nfc,
 	marvell_nand->ndtr1 = readl_relaxed(nfc->regs + NDTR1);
 
 	chip->options |= NAND_BUSWIDTH_AUTO;
+//	chip->options |= NAND_SKIP_BBTSCAN;
 
 	ret = nand_scan(chip, marvell_nand->nsels);
 	if (ret) {
@@ -2657,11 +2658,20 @@ static int marvell_nand_chip_init(struct device *dev, struct marvell_nfc *nfc,
 		return ret;
 	}
 
+#ifdef CONFIG_MTD_NAND_RB
+	{
+		extern int rb_nand_register_partitions(struct mtd_info *mtd);
+		printk("rb_nand_register_partitions(mtd);\n");
+		rb_nand_register_partitions(mtd);
+	}
+#else
 	if (pdata)
 		/* Legacy bindings support only one chip */
 		ret = mtd_device_register(mtd, pdata->parts, pdata->nr_parts);
 	else
 		ret = mtd_device_register(mtd, NULL, 0);
+#endif
+
 	if (ret) {
 		dev_err(dev, "failed to register mtd device: %d\n", ret);
 		nand_release(chip);

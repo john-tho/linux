@@ -91,6 +91,9 @@
 
 #include "internal.h"
 
+DEFINE_PER_CPU(struct net_device *, per_cpu_port);
+EXPORT_PER_CPU_SYMBOL(per_cpu_port);
+
 /*
    Assumptions:
    - if device has no dev->hard_header routine, it adds and removes ll header
@@ -1927,8 +1930,14 @@ retry:
 	}
 
 	err = -EMSGSIZE;
+	if (dev->l2mtu) {
+		if (len > dev->l2mtu + dev->hard_header_len)
+			goto out_unlock;
+	}
+	else {
 	if (len > dev->mtu + dev->hard_header_len + VLAN_HLEN + extra_len)
 		goto out_unlock;
+	}
 
 	if (!skb) {
 		size_t reserved = LL_RESERVED_SPACE(dev);
@@ -1963,7 +1972,7 @@ retry:
 		err = -EINVAL;
 		goto out_unlock;
 	}
-	if (len > (dev->mtu + dev->hard_header_len + extra_len) &&
+	if (!dev->l2mtu && len > (dev->mtu + dev->hard_header_len + extra_len) &&
 	    !packet_extra_vlan_len_allowed(dev, skb)) {
 		err = -EMSGSIZE;
 		goto out_unlock;
@@ -2180,7 +2189,7 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 	 * We may add members to them until current aligned size without forcing
 	 * userspace to call getsockopt(..., PACKET_HDRLEN, ...).
 	 */
-	BUILD_BUG_ON(TPACKET_ALIGN(sizeof(*h.h2)) != 32);
+	BUILD_BUG_ON(TPACKET_ALIGN(sizeof(*h.h2)) != 48);
 	BUILD_BUG_ON(TPACKET_ALIGN(sizeof(*h.h3)) != 48);
 
 	if (skb->pkt_type == PACKET_LOOPBACK)
@@ -2340,7 +2349,29 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 			h.h2->tp_vlan_tci = 0;
 			h.h2->tp_vlan_tpid = 0;
 		}
+		h.h2->tp_cpuid = smp_processor_id();
 		memset(h.h2->tp_padding, 0, sizeof(h.h2->tp_padding));
+		{
+			struct net_device *port = *this_cpu_ptr(&per_cpu_port);
+//			printk("%s: tpacket rcv %04x port:%s\n", dev->name, po->prot_hook.type, port ? port->name : "");
+			h.h2->tp_port_ifindex = 0;
+			if (port) {
+				unsigned pifindex = port->ifindex;
+				bool is_master = false;
+				while (port->master_dev) {
+					port = port->master_dev;
+					if (port->ifindex == dev->ifindex) {
+						is_master = true;
+						break;
+					}
+				}
+//				printk("%s: pifindex:%u tpacket rcv %04x master:%s is_master:%u\n", dev->name, pifindex, po->prot_hook.type, port->name, is_master);
+				if (is_master) {
+					// only if current netdev is direct parent otherwise packet could be decapsulated/modified already and may not be attributed to the port netdev
+					h.h2->tp_port_ifindex = pifindex;
+				}
+			}
+		}
 		hdrlen = sizeof(*h.h2);
 		break;
 	case TPACKET_V3:
@@ -2634,6 +2665,7 @@ static int tpacket_snd(struct packet_sock *po, struct msghdr *msg)
 	int len_sum = 0;
 	int status = TP_STATUS_AVAILABLE;
 	int hlen, tlen, copylen = 0;
+	unsigned mtu;
 	long timeo = 0;
 
 	mutex_lock(&po->pg_vec_lock);
@@ -2685,8 +2717,9 @@ static int tpacket_snd(struct packet_sock *po, struct msghdr *msg)
 	size_max = po->tx_ring.frame_size
 		- (po->tp_hdrlen - sizeof(struct sockaddr_ll));
 
-	if ((size_max > dev->mtu + reserve + VLAN_HLEN) && !po->has_vnet_hdr)
-		size_max = dev->mtu + reserve + VLAN_HLEN;
+	mtu = dev->l2mtu ? dev->l2mtu : dev->mtu;
+	if ((size_max > mtu + reserve + VLAN_HLEN) && !po->has_vnet_hdr)
+		size_max = mtu + reserve + VLAN_HLEN;
 
 	reinit_completion(&po->skb_completion);
 
@@ -2853,6 +2886,7 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 	bool has_vnet_hdr = false;
 	int hlen, tlen, linear;
 	int extra_len = 0;
+	unsigned mtu;
 
 	/*
 	 *	Get and verify the address.
@@ -2884,6 +2918,7 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 	if (unlikely(!(dev->flags & IFF_UP)))
 		goto out_unlock;
 
+	mtu = dev->l2mtu ? dev->l2mtu : dev->mtu;
 	sockcm_init(&sockc, sk);
 	sockc.mark = sk->sk_mark;
 	if (msg->msg_controllen) {
@@ -2911,7 +2946,7 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 
 	err = -EMSGSIZE;
 	if (!vnet_hdr.gso_type &&
-	    (len > dev->mtu + reserve + VLAN_HLEN + extra_len))
+	    (len > mtu + reserve + VLAN_HLEN + extra_len))
 		goto out_unlock;
 
 	err = -ENOBUFS;
@@ -2951,7 +2986,8 @@ static int packet_snd(struct socket *sock, struct msghdr *msg, size_t len)
 
 	skb_setup_tx_timestamp(skb, sockc.tsflags);
 
-	if (!vnet_hdr.gso_type && (len > dev->mtu + reserve + extra_len) &&
+	if (!dev->l2mtu &&
+	    !vnet_hdr.gso_type && (len > dev->mtu + reserve + extra_len) &&
 	    !packet_extra_vlan_len_allowed(dev, skb)) {
 		err = -EMSGSIZE;
 		goto out_free;

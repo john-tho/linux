@@ -1084,6 +1084,7 @@ int fsl_pci_mcheck_exception(struct pt_regs *regs)
 #if defined(CONFIG_FSL_SOC_BOOKE) || defined(CONFIG_PPC_86xx)
 static const struct of_device_id pci_ids[] = {
 	{ .compatible = "fsl,mpc8540-pci", },
+	{ .compatible = "fsl,mpc8540-pcie", },
 	{ .compatible = "fsl,mpc8548-pcie", },
 	{ .compatible = "fsl,mpc8610-pci", },
 	{ .compatible = "fsl,mpc8641-pcie", },
@@ -1309,7 +1310,7 @@ static int fsl_pci_probe(struct platform_device *pdev)
 	int ret;
 
 	node = pdev->dev.of_node;
-	ret = fsl_add_bridge(pdev, fsl_pci_primary == node);
+	ret = fsl_add_bridge(pdev, 0);
 	if (ret)
 		return ret;
 

@@ -58,7 +58,7 @@ static struct clk_alpha_pll gpll0_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gpll0_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_ops,
@@ -94,7 +94,7 @@ static struct clk_alpha_pll_postdiv gpll0 = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll0_out_main_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw},
 	{ .hw = &gpll0_out_main_div2.hw},
 };
@@ -115,7 +115,7 @@ static struct clk_alpha_pll ubi32_pll_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "ubi32_pll_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_huayra_ops,
@@ -146,7 +146,7 @@ static struct clk_alpha_pll gpll6_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gpll6_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_ops,
@@ -177,7 +177,7 @@ static struct clk_alpha_pll gpll4_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gpll4_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_ops,
@@ -228,7 +228,7 @@ static struct clk_alpha_pll gpll2_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gpll2_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_ops,
@@ -259,7 +259,7 @@ static struct clk_alpha_pll nss_crypto_pll_main = {
 		.hw.init = &(struct clk_init_data){
 			.name = "nss_crypto_pll_main",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.ops = &clk_alpha_pll_ops,
@@ -289,7 +289,7 @@ static const struct freq_tbl ftbl_qdss_tsctr_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll4_gpll0_gpll6_gpll0_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll4.clkr.hw },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll6.clkr.hw },
@@ -368,8 +368,8 @@ static const struct freq_tbl ftbl_nss_ppe_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_bias_gpll0_gpll4_nss_ubi32[] = {
-	{ .fw_name = "xo" },
-	{ .fw_name = "bias_pll_cc_clk" },
+	{ .name = "xo" },
+	{ .name = "bias_pll_cc_clk" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll4.clkr.hw },
 	{ .hw = &nss_crypto_pll.clkr.hw },
@@ -406,7 +406,7 @@ static struct clk_branch gcc_xo_clk_src = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gcc_xo_clk_src",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "xo",
+				.name = "xo",
 			},
 			.num_parents = 1,
 			.flags = CLK_SET_RATE_PARENT,
@@ -422,7 +422,7 @@ static const struct freq_tbl ftbl_nss_ce_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 };
 
@@ -452,7 +452,7 @@ static struct clk_branch gcc_sleep_clk_src = {
 		.hw.init = &(struct clk_init_data){
 			.name = "gcc_sleep_clk_src",
 			.parent_data = &(const struct clk_parent_data){
-				.fw_name = "sleep_clk",
+				.name = "sleep_clk",
 			},
 			.num_parents = 1,
 			.ops = &clk_branch2_ops,
@@ -473,7 +473,7 @@ static const struct freq_tbl ftbl_snoc_nssnoc_bfdcd_clk_src[] = {
 
 static const struct clk_parent_data
 			gcc_xo_gpll0_gpll6_gpll0_out_main_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll6.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
@@ -534,13 +534,13 @@ static const struct freq_tbl ftbl_nss_port5_rx_clk_src[] = {
 
 static const struct clk_parent_data
 gcc_xo_uniphy0_rx_tx_uniphy1_rx_tx_ubi32_bias[] = {
-	{ .fw_name = "xo" },
-	{ .fw_name = "uniphy0_gcc_rx_clk" },
-	{ .fw_name = "uniphy0_gcc_tx_clk" },
-	{ .fw_name = "uniphy1_gcc_rx_clk" },
-	{ .fw_name = "uniphy1_gcc_tx_clk" },
+	{ .name = "xo" },
+	{ .name = "uniphy0_gcc_rx_clk" },
+	{ .name = "uniphy0_gcc_tx_clk" },
+	{ .name = "uniphy1_gcc_rx_clk" },
+	{ .name = "uniphy1_gcc_tx_clk" },
 	{ .hw = &ubi32_pll.clkr.hw },
-	{ .fw_name = "bias_pll_cc_clk" },
+	{ .name = "bias_pll_cc_clk" },
 };
 
 static const struct parent_map
@@ -581,13 +581,13 @@ static const struct freq_tbl ftbl_nss_port5_tx_clk_src[] = {
 
 static const struct clk_parent_data
 gcc_xo_uniphy0_tx_rx_uniphy1_tx_rx_ubi32_bias[] = {
-	{ .fw_name = "xo" },
-	{ .fw_name = "uniphy0_gcc_tx_clk" },
-	{ .fw_name = "uniphy0_gcc_rx_clk" },
-	{ .fw_name = "uniphy1_gcc_tx_clk" },
-	{ .fw_name = "uniphy1_gcc_rx_clk" },
+	{ .name = "xo" },
+	{ .name = "uniphy0_gcc_tx_clk" },
+	{ .name = "uniphy0_gcc_rx_clk" },
+	{ .name = "uniphy1_gcc_tx_clk" },
+	{ .name = "uniphy1_gcc_rx_clk" },
 	{ .hw = &ubi32_pll.clkr.hw },
-	{ .fw_name = "bias_pll_cc_clk" },
+	{ .name = "bias_pll_cc_clk" },
 };
 
 static const struct parent_map
@@ -628,7 +628,7 @@ static const struct freq_tbl ftbl_pcie_rchng_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll4[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll4.clkr.hw },
 };
@@ -661,7 +661,7 @@ static const struct freq_tbl ftbl_usb0_master_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_out_main_div2_gpll0[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0_out_main_div2.hw },
 	{ .hw = &gpll0.clkr.hw },
 };
@@ -722,11 +722,11 @@ static const struct freq_tbl ftbl_nss_port1_rx_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_uniphy0_rx_tx_ubi32_bias[] = {
-	{ .fw_name = "xo" },
-	{ .fw_name = "uniphy0_gcc_rx_clk" },
-	{ .fw_name = "uniphy0_gcc_tx_clk" },
+	{ .name = "xo" },
+	{ .name = "uniphy0_gcc_rx_clk" },
+	{ .name = "uniphy0_gcc_tx_clk" },
 	{ .hw = &ubi32_pll.clkr.hw },
-	{ .fw_name = "bias_pll_cc_clk" },
+	{ .name = "bias_pll_cc_clk" },
 };
 
 static const struct parent_map gcc_xo_uniphy0_rx_tx_ubi32_bias_map[] = {
@@ -758,11 +758,11 @@ static const struct freq_tbl ftbl_nss_port1_tx_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_uniphy0_tx_rx_ubi32_bias[] = {
-	{ .fw_name = "xo" },
-	{ .fw_name = "uniphy0_gcc_tx_clk" },
-	{ .fw_name = "uniphy0_gcc_rx_clk" },
+	{ .name = "xo" },
+	{ .name = "uniphy0_gcc_tx_clk" },
+	{ .name = "uniphy0_gcc_rx_clk" },
 	{ .hw = &ubi32_pll.clkr.hw },
-	{ .fw_name = "bias_pll_cc_clk" },
+	{ .name = "bias_pll_cc_clk" },
 };
 
 static const struct parent_map gcc_xo_uniphy0_tx_rx_ubi32_bias_map[] = {
@@ -907,7 +907,7 @@ static const struct freq_tbl ftbl_apss_axi_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll6_ubi32_gpll0_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll6.clkr.hw },
 	{ .hw = &ubi32_pll.clkr.hw },
@@ -943,7 +943,7 @@ static const struct freq_tbl ftbl_nss_crypto_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_nss_crypto_pll_gpll0[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &nss_crypto_pll.clkr.hw },
 	{ .hw = &gpll0.clkr.hw },
 };
@@ -960,6 +960,7 @@ static struct clk_rcg2 nss_crypto_clk_src = {
 	.mnd_width = 16,
 	.hid_width = 5,
 	.parent_map = gcc_xo_nss_crypto_pll_gpll0_map,
+	.flags = CLK_RCG2_HW_CONTROLLED,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "nss_crypto_clk_src",
 		.parent_data = gcc_xo_nss_crypto_pll_gpll0,
@@ -1109,7 +1110,7 @@ static const struct freq_tbl ftbl_nss_ubi_clk_src[] = {
 
 static const struct clk_parent_data
 			gcc_xo_ubi32_pll_gpll0_gpll2_gpll4_gpll6[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &ubi32_pll.clkr.hw },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll2.clkr.hw },
@@ -1475,11 +1476,11 @@ static const struct freq_tbl ftbl_gp_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll6_gpll0_sleep_clk[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll6.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
-	{ .fw_name = "sleep_clk" },
+	{ .name = "sleep_clk" },
 };
 
 static const struct parent_map gcc_xo_gpll0_gpll6_gpll0_sleep_clk_map[] = {
@@ -1566,9 +1567,9 @@ static const struct freq_tbl ftbl_pcie_aux_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_core_pi_sleep_clk[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
-	{ .fw_name = "sleep_clk" },
+	{ .name = "sleep_clk" },
 };
 
 static const struct parent_map gcc_xo_gpll0_core_pi_sleep_clk_map[] = {
@@ -1592,8 +1593,8 @@ static struct clk_rcg2 pcie0_aux_clk_src = {
 };
 
 static const struct clk_parent_data gcc_pcie20_phy0_pipe_clk_xo[] = {
-	{ .fw_name = "pcie20_phy0_pipe_clk" },
-	{ .fw_name = "xo" },
+	{ .name = "pcie20_phy0_pipe_clk" },
+	{ .name = "xo" },
 };
 
 static const struct parent_map gcc_pcie20_phy0_pipe_clk_xo_map[] = {
@@ -1631,7 +1632,7 @@ static const struct freq_tbl ftbl_sdcc_apps_clk_src[] = {
 
 static const struct clk_parent_data
 			gcc_xo_gpll0_gpll2_gpll0_out_main_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll2.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
@@ -1685,7 +1686,7 @@ static const struct freq_tbl ftbl_usb_mock_utmi_clk_src[] = {
 
 static const struct clk_parent_data
 			gcc_xo_gpll6_gpll0_gpll0_out_main_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll6.clkr.hw },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
@@ -1713,8 +1714,8 @@ static struct clk_rcg2 usb0_mock_utmi_clk_src = {
 };
 
 static const struct clk_parent_data gcc_usb3phy_0_cc_pipe_clk_xo[] = {
-	{ .fw_name = "usb3phy_0_cc_pipe_clk" },
-	{ .fw_name = "xo" },
+	{ .name = "usb3phy_0_cc_pipe_clk" },
+	{ .name = "xo" },
 };
 
 static const struct parent_map gcc_usb3phy_0_cc_pipe_clk_xo_map[] = {
@@ -1746,7 +1747,7 @@ static const struct freq_tbl ftbl_sdcc_ice_core_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll6_gpll0_div2[] = {
-	{ .fw_name = "xo"},
+	{ .name = "xo"},
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll6.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
@@ -1802,7 +1803,7 @@ static const struct freq_tbl ftbl_qdss_traceclkin_clk_src[] = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll4_gpll0_gpll0_div2[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll4.clkr.hw },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll0_out_main_div2.hw },
@@ -1908,10 +1909,10 @@ static const struct freq_tbl ftbl_ubi32_mem_noc_bfdcd_clk_src[] = {
 
 static const struct clk_parent_data
 			gcc_xo_gpll0_gpll2_bias_pll_nss_noc_clk[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll2.clkr.hw },
-	{ .fw_name = "bias_pll_nss_noc_clk" },
+	{ .name = "bias_pll_nss_noc_clk" },
 };
 
 static const struct parent_map gcc_xo_gpll0_gpll2_bias_pll_nss_noc_clk_map[] = {
@@ -2586,7 +2587,7 @@ static struct clk_rcg2 wcss_ahb_clk_src = {
 };
 
 static const struct clk_parent_data gcc_xo_gpll0_gpll2_gpll4_gpll6[] = {
-	{ .fw_name = "xo" },
+	{ .name = "xo" },
 	{ .hw = &gpll0.clkr.hw },
 	{ .hw = &gpll2.clkr.hw },
 	{ .hw = &gpll4.clkr.hw },
@@ -3609,6 +3610,7 @@ static struct clk_branch gcc_uniphy0_ahb_clk = {
 
 static struct clk_branch gcc_uniphy0_port1_rx_clk = {
 	.halt_reg = 0x56010,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56010,
 		.enable_mask = BIT(0),
@@ -3625,6 +3627,7 @@ static struct clk_branch gcc_uniphy0_port1_rx_clk = {
 
 static struct clk_branch gcc_uniphy0_port1_tx_clk = {
 	.halt_reg = 0x56014,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56014,
 		.enable_mask = BIT(0),
@@ -3641,6 +3644,7 @@ static struct clk_branch gcc_uniphy0_port1_tx_clk = {
 
 static struct clk_branch gcc_uniphy0_port2_rx_clk = {
 	.halt_reg = 0x56018,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56018,
 		.enable_mask = BIT(0),
@@ -3657,6 +3661,7 @@ static struct clk_branch gcc_uniphy0_port2_rx_clk = {
 
 static struct clk_branch gcc_uniphy0_port2_tx_clk = {
 	.halt_reg = 0x5601c,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x5601c,
 		.enable_mask = BIT(0),
@@ -3673,6 +3678,7 @@ static struct clk_branch gcc_uniphy0_port2_tx_clk = {
 
 static struct clk_branch gcc_uniphy0_port3_rx_clk = {
 	.halt_reg = 0x56020,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56020,
 		.enable_mask = BIT(0),
@@ -3689,6 +3695,7 @@ static struct clk_branch gcc_uniphy0_port3_rx_clk = {
 
 static struct clk_branch gcc_uniphy0_port3_tx_clk = {
 	.halt_reg = 0x56024,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56024,
 		.enable_mask = BIT(0),
@@ -3705,6 +3712,7 @@ static struct clk_branch gcc_uniphy0_port3_tx_clk = {
 
 static struct clk_branch gcc_uniphy0_port4_rx_clk = {
 	.halt_reg = 0x56028,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56028,
 		.enable_mask = BIT(0),
@@ -3721,6 +3729,7 @@ static struct clk_branch gcc_uniphy0_port4_rx_clk = {
 
 static struct clk_branch gcc_uniphy0_port4_tx_clk = {
 	.halt_reg = 0x5602c,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x5602c,
 		.enable_mask = BIT(0),
@@ -3737,6 +3746,7 @@ static struct clk_branch gcc_uniphy0_port4_tx_clk = {
 
 static struct clk_branch gcc_uniphy0_port5_rx_clk = {
 	.halt_reg = 0x56030,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56030,
 		.enable_mask = BIT(0),
@@ -3753,6 +3763,7 @@ static struct clk_branch gcc_uniphy0_port5_rx_clk = {
 
 static struct clk_branch gcc_uniphy0_port5_tx_clk = {
 	.halt_reg = 0x56034,
+	.silent = 1,
 	.clkr = {
 		.enable_reg = 0x56034,
 		.enable_mask = BIT(0),

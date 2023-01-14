@@ -36,7 +36,7 @@ static inline __attribute_const__ __u32 __arch_swab32(__u32 x)
 		 * right thing and not screw it up to different degrees
 		 * depending on the gcc version.
 		 */
-		asm ("eor\t%0, %1, %1, ror #16" : "=r" (t) : "r" (x));
+		__asm__ ("eor\t%0, %1, %1, ror #16" : "=r" (t) : "r" (x));
 	} else
 #endif
 		t = x ^ ((x << 16) | (x >> 16)); /* eor r1,r0,r0,ror #16 */

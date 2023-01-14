@@ -753,6 +753,8 @@ static int setup_port_bulk_in(struct usb_serial_port *port,
 	int i;
 
 	buffer_size = max_t(int, type->bulk_in_size, usb_endpoint_maxp(epd));
+	if (type->max_buf_size)
+		buffer_size = type->max_buf_size;
 	port->bulk_in_size = buffer_size;
 	port->bulk_in_endpointAddress = epd->bEndpointAddress;
 

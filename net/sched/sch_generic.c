@@ -230,7 +230,8 @@ static struct sk_buff *dequeue_skb(struct Qdisc *q, bool *validate,
 		if (xfrm_offload(skb))
 			*validate = true;
 		/* check the reason of requeuing without tx lock first */
-		txq = skb_get_tx_queue(txq->dev, skb);
+		txq = netdev_core_pick_tx(txq->dev, skb, NULL);
+//		txq = skb_get_tx_queue(txq->dev, skb);
 		if (!netif_xmit_frozen_or_stopped(txq)) {
 			skb = __skb_dequeue(&q->gso_skb);
 			if (qdisc_is_percpu_stats(q)) {
@@ -308,11 +309,23 @@ bool sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 #endif
 
 	if (likely(skb)) {
+		if (txq->xmit_lock_owner != smp_processor_id()) {
 		HARD_TX_LOCK(dev, txq, smp_processor_id());
 		if (!netif_xmit_frozen_or_stopped(txq))
 			skb = dev_hard_start_xmit(skb, dev, txq, &ret);
-
 		HARD_TX_UNLOCK(dev, txq);
+		}
+		else {
+			kfree_skb_list(skb);
+			ret = NETDEV_TX_OK;
+			if (net_ratelimit()) {
+				static unsigned topics[] = { 61, 2, 0 }; // intrerface,warning
+				void kernel_log_message(unsigned *topics, const char *format, ...);
+				kernel_log_message(topics, "*%08x: tx loop on interface (2)", dev->ifindex);
+				printk(KERN_CRIT "sch_direct_xmit: xmit loop on %s\n", dev->name);
+				WARN_ON(1);
+			}
+		}
 	} else {
 		if (root_lock)
 			spin_lock(root_lock);
@@ -371,7 +384,8 @@ static inline bool qdisc_restart(struct Qdisc *q, int *packets)
 		root_lock = qdisc_lock(q);
 
 	dev = qdisc_dev(q);
-	txq = skb_get_tx_queue(dev, skb);
+	txq = netdev_core_pick_tx(dev, skb, NULL);
+//	txq = skb_get_tx_queue(dev, skb);
 
 	return sch_direct_xmit(skb, q, dev, txq, root_lock, validate);
 }
@@ -389,6 +403,7 @@ void __qdisc_run(struct Qdisc *q)
 		}
 	}
 }
+EXPORT_SYMBOL(__qdisc_run);
 
 unsigned long dev_trans_start(struct net_device *dev)
 {

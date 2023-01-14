@@ -33,7 +33,7 @@
 struct vlan_hdr {
 	__be16	h_vlan_TCI;
 	__be16	h_vlan_encapsulated_proto;
-};
+} __attribute__((packed));
 
 /**
  *	struct vlan_ethhdr - vlan ethernet header (ethhdr + vlan_hdr)
@@ -49,7 +49,7 @@ struct vlan_ethhdr {
 	__be16		h_vlan_proto;
 	__be16		h_vlan_TCI;
 	__be16		h_vlan_encapsulated_proto;
-};
+} __attribute__((packed));
 
 #include <linux/skbuff.h>
 
@@ -192,6 +192,7 @@ static inline struct vlan_dev_priv *vlan_dev_priv(const struct net_device *dev)
 static inline u16
 vlan_dev_get_egress_qos_mask(struct net_device *dev, u32 skprio)
 {
+#if 0
 	struct vlan_priority_tci_mapping *mp;
 
 	smp_rmb(); /* coupled with smp_wmb() in vlan_dev_set_egress_priority() */
@@ -206,6 +207,9 @@ vlan_dev_get_egress_qos_mask(struct net_device *dev, u32 skprio)
 		mp = mp->next;
 	}
 	return 0;
+#else
+	return (skprio & 7) << 13;
+#endif
 }
 
 extern bool vlan_do_receive(struct sk_buff **skb);
@@ -567,6 +571,9 @@ static inline int vlan_get_tag(const struct sk_buff *skb, u16 *vlan_tci)
 		return __vlan_get_tag(skb, vlan_tci);
 	}
 }
+
+#define ANY_VLAN_PROTO_N(p) (((p) == __constant_htons(ETH_P_8021Q)) \
+			     || ((p) == __constant_htons(ETH_P_8021AD)))
 
 /**
  * vlan_get_protocol - get protocol EtherType.

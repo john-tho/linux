@@ -50,7 +50,12 @@ static void __init qemu_e500_setup_arch(void)
  */
 static int __init qemu_e500_probe(void)
 {
-	return !!of_machine_is_compatible("fsl,qemu-e500");
+	if (!of_machine_is_compatible("fsl,qemu-e500")) return 0;
+
+        pm_power_off = fsl_rstcr_halt;
+        ppc_md.halt = fsl_rstcr_halt;
+
+        return 1;
 }
 
 machine_arch_initcall(qemu_e500, mpc85xx_common_publish_devices);
