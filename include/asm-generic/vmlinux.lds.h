@@ -716,6 +716,7 @@
 		*(.dynbss)						\
 		*(BSS_MAIN)						\
 		*(COMMON)						\
+		. = (ALIGN(PAGE_SIZE) - .) < 8 ? ALIGN(PAGE_SIZE) + 4 : . ; \
 	}
 
 /*

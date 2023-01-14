@@ -432,9 +432,10 @@ void inet_proto_csum_replace4(__sum16 *sum, struct sk_buff *skb,
 						       (__force __wsum)from),
 					      (__force __wsum)to);
 	} else if (pseudohdr)
-		*sum = ~csum_fold(csum_add(csum_sub(csum_unfold(*sum),
+		put_unaligned(~csum_fold(csum_add(csum_sub(csum_unfold(*sum),
 						    (__force __wsum)from),
-					   (__force __wsum)to));
+						  (__force __wsum)to)),
+			      sum);
 }
 EXPORT_SYMBOL(inet_proto_csum_replace4);
 

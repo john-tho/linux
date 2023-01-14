@@ -187,6 +187,7 @@ static inline void __iomem * __ioremap_mode(phys_addr_t offset, unsigned long si
 		if (!size || last_addr < phys_addr)
 			return NULL;
 
+#ifndef CONFIG_MAPPED_KERNEL
 		/*
 		 * Map uncached objects in the low 512MB of address
 		 * space using KSEG1.
@@ -195,6 +196,7 @@ static inline void __iomem * __ioremap_mode(phys_addr_t offset, unsigned long si
 		    flags == _CACHE_UNCACHED)
 			return (void __iomem *)
 				(unsigned long)CKSEG1ADDR(phys_addr);
+#endif
 	}
 
 	return __ioremap(offset, size, flags);
@@ -635,5 +637,42 @@ extern void (*_dma_cache_inv)(unsigned long start, unsigned long size);
 #define xlate_dev_kmem_ptr(p)	p
 
 void __ioread64_copy(void *to, const void __iomem *from, size_t count);
+
+#ifdef CONFIG_SOFT_PCI_IO
+
+unsigned _pci_inb(unsigned long port);
+unsigned _pci_inw(unsigned long port);
+unsigned _pci_inl(unsigned long port);
+void _pci_outb(unsigned char value, unsigned long port);
+void _pci_outw(unsigned short value, unsigned long port);
+void _pci_outl(unsigned value, unsigned long port);
+
+#define inb	_pci_inb
+#define inb_p	_pci_inb
+#define __mem_inb	_pci_inb
+#define __mem_inb_p	_pci_inb
+#define inw	_pci_inw
+#define inw_p	_pci_inw
+#define __mem_inw	_pci_inw
+#define __mem_inw_p	_pci_inw
+#define inl	_pci_inl
+#define inl_p	_pci_inl
+#define __mem_inl	_pci_inl
+#define __mem_inl_p	_pci_inl
+
+#define outb	_pci_outb
+#define outb_p	_pci_outb
+#define __mem_outb	_pci_outb
+#define __mem_outb_p	_pci_outb
+#define outw	_pci_outw
+#define outw_p	_pci_outw
+#define __mem_outw	_pci_outw
+#define __mem_outw_p	_pci_outw
+#define outl	_pci_outl
+#define outl_p	_pci_outl
+#define __mem_outl	_pci_outl
+#define __mem_outl_p	_pci_outl
+
+#endif
 
 #endif /* _ASM_IO_H */

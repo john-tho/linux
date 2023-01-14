@@ -336,6 +336,7 @@ static int __nf_register_net_hook(struct net *net, int pf,
 	p = nf_entry_dereference(*pp);
 	new_hooks = nf_hook_entries_grow(p, reg);
 
+	fp_nf_changed(1, reg->pf);
 	if (!IS_ERR(new_hooks))
 		rcu_assign_pointer(*pp, new_hooks);
 
@@ -400,6 +401,7 @@ static void __nf_unregister_net_hook(struct net *net, int pf,
 		mutex_unlock(&nf_hook_mutex);
 		return;
 	}
+	fp_nf_changed(-1, reg->pf);
 
 	if (nf_remove_net_hook(p, reg)) {
 #ifdef CONFIG_NETFILTER_INGRESS

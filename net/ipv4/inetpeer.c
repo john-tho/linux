@@ -191,17 +191,19 @@ struct inet_peer *inet_getpeer(struct inet_peer_base *base,
 	/* Attempt a lockless lookup first.
 	 * Because of a concurrent writer, we might not find an existing entry.
 	 */
+	do {
 	rcu_read_lock();
 	seq = read_seqbegin(&base->lock);
 	p = lookup(daddr, base, seq, NULL, &gc_cnt, &parent, &pp);
 	invalidated = read_seqretry(&base->lock, seq);
 	rcu_read_unlock();
-
 	if (p)
 		return p;
+	} while (invalidated);
+
 
 	/* If no writer did a change during our lookup, we can return early. */
-	if (!create && !invalidated)
+	if (!create)
 		return NULL;
 
 	/* retry an exact lookup, taking the lock before.

@@ -228,6 +228,8 @@ int mips_cm_probe(void)
 		return -ENODEV;
 	}
 
+	/* our bootloader has already set it up & we can't enable memory coherency */
+#ifndef CONFIG_MIPS_MIKROTIK
 	/* set default target to memory */
 	change_gcr_base(CM_GCR_BASE_CMDEFTGT, CM_GCR_BASE_CMDEFTGT_MEM);
 
@@ -240,6 +242,7 @@ int mips_cm_probe(void)
 	write_gcr_reg2_mask(CM_GCR_REGn_MASK_ADDRMASK);
 	write_gcr_reg3_base(CM_GCR_REGn_BASE_BASEADDR);
 	write_gcr_reg3_mask(CM_GCR_REGn_MASK_ADDRMASK);
+#endif	
 
 	/* probe for an L2-only sync region */
 	mips_cm_probe_l2sync();

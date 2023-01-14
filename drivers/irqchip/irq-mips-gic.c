@@ -44,6 +44,7 @@
 #define GIC_SHARED_TO_HWIRQ(x)	(GIC_SHARED_HWIRQ_BASE + (x))
 #define GIC_HWIRQ_TO_SHARED(x)	((x) - GIC_SHARED_HWIRQ_BASE)
 
+unsigned int gic_present;
 void __iomem *mips_gic_base;
 
 DEFINE_PER_CPU_READ_MOSTLY(unsigned long[GIC_MAX_LONGS], pcpu_masks);
@@ -797,6 +798,8 @@ static int __init gic_of_init(struct device_node *node,
 		change_gic_trig(i, GIC_TRIG_LEVEL);
 		write_gic_rmask(i);
 	}
+
+	gic_present = true;
 
 	return cpuhp_setup_state(CPUHP_AP_IRQ_MIPS_GIC_STARTING,
 				 "irqchip/mips/gic:starting",

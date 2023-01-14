@@ -16,6 +16,9 @@
 
 #include "internals.h"
 
+extern int mlc_ecc_allowed;
+extern const struct mtd_ooblayout_ops nand_ooblayout_64_mlc_ops;
+
 u16 onfi_crc16(u16 crc, u8 const *p, size_t len)
 {
 	int i;
@@ -271,6 +274,13 @@ int nand_onfi_detect(struct nand_chip *chip)
 			pr_warn("Failed to detect ONFI extended param page\n");
 	} else {
 		pr_warn("Could not retrieve ONFI ECC requirements\n");
+	}
+
+	if (p->ecc_bits > 2 && p->ecc_bits <= 6 && mlc_ecc_allowed) {
+		pr_info("NAND: %d ECC bits => use MLC ecc\n", (int)p->ecc_bits);
+		mtd_set_ooblayout(mtd, &nand_ooblayout_64_mlc_ops);
+		// MLC ecc does not work correcly on sub-page writes....
+		chip->options |= NAND_NO_SUBPAGE_WRITE;
 	}
 
 	/* Save some parameters from the parameter page for future use */

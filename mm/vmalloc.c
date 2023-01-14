@@ -127,7 +127,7 @@ static void vunmap_p4d_range(pgd_t *pgd, unsigned long addr, unsigned long end)
 	} while (p4d++, addr = next, addr != end);
 }
 
-static void vunmap_page_range(unsigned long addr, unsigned long end)
+void vunmap_page_range(unsigned long addr, unsigned long end)
 {
 	pgd_t *pgd;
 	unsigned long next;
@@ -162,6 +162,16 @@ static int vmap_pte_range(pmd_t *pmd, unsigned long addr,
 			return -EBUSY;
 		if (WARN_ON(!page))
 			return -ENOMEM;
+#ifdef CONFIG_HOMECACHE
+		/* Mark this page permanently as vmapped.  Since multiple
+		 * callers can vmap it to different places, the bit is
+		 * persistent until such time as the page is freed.
+		 * (It seemed like overkill to have a refcount here,
+		 * and normal vmap clients are purely kernel users that
+		 * just allocate, map, and free anyway.)
+		 */
+		set_bit(PG_homecache_nomigrate, &page->flags);
+#endif
 		set_pte_at(&init_mm, addr, pte, mk_pte(page, prot));
 		(*nr)++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);

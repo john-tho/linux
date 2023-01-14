@@ -76,6 +76,16 @@ static void wakeup_softirqd(void)
 		wake_up_process(tsk);
 }
 
+static bool is_softirqd_sleeping(void)
+{
+	struct task_struct *tsk = __this_cpu_read(ksoftirqd);
+
+	if (tsk && tsk->state == TASK_INTERRUPTIBLE) {
+		return true;
+	}
+	return false;
+}
+
 /*
  * If ksoftirqd is scheduled, we do not want to process pending softirqs
  * right now. Let ksoftirqd handle this at its own rate, to get fairness,
@@ -181,7 +191,8 @@ void __local_bh_enable_ip(unsigned long ip, unsigned int cnt)
 	 */
 	preempt_count_sub(cnt - 1);
 
-	if (unlikely(!in_interrupt() && local_softirq_pending())) {
+	if (unlikely(is_softirqd_sleeping() &&
+		     !in_interrupt() && local_softirq_pending())) {
 		/*
 		 * Run softirq if any pending. And do it in its own stack
 		 * as we may be calling this deep in a task call stack already.
@@ -409,7 +420,8 @@ void irq_exit(void)
 #endif
 	account_irq_exit_time(current);
 	preempt_count_sub(HARDIRQ_OFFSET);
-	if (!in_interrupt() && local_softirq_pending())
+	if (is_softirqd_sleeping() &&
+	    !in_interrupt() && local_softirq_pending())
 		invoke_softirq();
 
 	tick_irq_exit();

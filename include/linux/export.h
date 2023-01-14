@@ -118,9 +118,10 @@ struct kernel_symbol {
  */
 #define __EXPORT_SYMBOL(sym, sec, ns)
 
-#elif defined(CONFIG_TRIM_UNUSED_KSYMS)
+#elif defined(CONFIG_TRIM_UNUSED_KSYMS) && !defined(NO_TRIM_KSYMS)
 
 #include <generated/autoksyms.h>
+#include <asm-generic/ksyms.h>
 
 /*
  * For fine grained build dependencies, we want to tell the build system

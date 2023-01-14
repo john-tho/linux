@@ -1,0 +1,85 @@
+/dts-v1/;
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "LHGB 5HPacD2HPnD";
+
+	spi1: spi1 {
+		compatible = "spi-gpio";
+		#address-cells = <0x1>;
+		#size-cells = <0>;
+
+		pinctrl-0 = <&gpio_spi_pins>;
+		pinctrl-names = "default";
+
+		gpio-sck = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+		gpio-miso = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+		gpio-mosi = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		cs-gpios = <&tlmm 2 GPIO_ACTIVE_HIGH
+				&tlmm 58 GPIO_ACTIVE_HIGH>;
+		num-chipselects = <2>;
+
+
+		ts@0 {
+			compatible = "rb-spi-ts";
+			spi-max-frequency = <1000000>;
+			reg = <0>;			/* Chip select */
+		};
+
+		gpio1: gpio-spi@1 {
+			compatible = "gpio-spi";
+			gpio-controller;
+			#gpio-cells = <2>;
+			nr-gpo = <8>;
+			nr-gpi = <8>;
+			spi-max-frequency = <1000000>;
+			reg = <1>;
+		};
+	};
+
+	leds {
+		compatible = "leds-rb";
+		power-led {
+			gpios = <&gpio1 1 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		user-led {
+			gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>;
+		};
+		led1 {
+			gpios = <&gpio1 3 GPIO_ACTIVE_HIGH>;
+		};
+		led2 {
+			gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
+		};
+		led3 {
+			gpios = <&gpio1 5 GPIO_ACTIVE_HIGH>;
+		};
+		led4 {
+			gpios = <&gpio1 6 GPIO_ACTIVE_HIGH>;
+		};
+		mode-button {
+			gpios = <&tlmm 60 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		button {
+			gpios = <&tlmm 63 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+};
+
+&tlmm {
+	gpio_spi_pins: gpio_spi_cs_pins_pinmux {
+		mux {
+			pins = "gpio1","gpio2","gpio3", "gpio58";
+			function = "gpio";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&edma {
+	port_map = <3 0x20004(-1)>;
+};

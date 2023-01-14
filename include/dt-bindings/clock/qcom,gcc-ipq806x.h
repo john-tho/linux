@@ -283,5 +283,8 @@
 #define EBI2_AON_CLK				281
 #define NSSTCM_CLK_SRC				282
 #define NSSTCM_CLK				283
+#define CE5_A_CLK				284
+#define CE5_A_CLK_SRC				285
+#define CE5_H_CLK_SRC				286
 
 #endif

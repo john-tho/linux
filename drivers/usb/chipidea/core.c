@@ -599,7 +599,7 @@ static int ci_cable_notifier(struct notifier_block *nb, unsigned long event,
 	ci_irq(ci->irq, ci);
 	return NOTIFY_DONE;
 }
-
+#if 0
 static enum usb_role ci_usb_role_switch_get(struct device *dev)
 {
 	struct ci_hdrc *ci = dev_get_drvdata(dev);
@@ -666,7 +666,7 @@ static struct usb_role_switch_desc ci_role_switch = {
 	.set = ci_usb_role_switch_set,
 	.get = ci_usb_role_switch_get,
 };
-
+#endif
 static int ci_get_platdata(struct device *dev,
 		struct ci_hdrc_platform_data *platdata)
 {
@@ -703,6 +703,7 @@ static int ci_get_platdata(struct device *dev,
 	}
 
 	if (platdata->dr_mode == USB_DR_MODE_OTG) {
+#if 0
 		/* We can support HNP and SRP of OTG 2.0 */
 		platdata->ci_otg_caps.otg_rev = 0x0200;
 		platdata->ci_otg_caps.hnp_support = true;
@@ -713,6 +714,10 @@ static int ci_get_platdata(struct device *dev,
 					&platdata->ci_otg_caps);
 		if (ret)
 			return ret;
+#else
+		printk("chipidea: OTG mode not supported!\n");
+		return -EINVAL;
+#endif
 	}
 
 	if (usb_get_maximum_speed(dev) == USB_SPEED_FULL)
@@ -793,6 +798,7 @@ static int ci_get_platdata(struct device *dev,
 			cable->connected = false;
 	}
 
+#if 0
 	if (device_property_read_bool(dev, "usb-role-switch"))
 		ci_role_switch.fwnode = dev->fwnode;
 
@@ -812,7 +818,7 @@ static int ci_get_platdata(struct device *dev,
 		if (!IS_ERR(p))
 			platdata->pins_device = p;
 	}
-
+#endif
 	return 0;
 }
 
@@ -1061,6 +1067,7 @@ static int ci_hdrc_probe(struct platform_device *pdev)
 		/* No USB PHY was found in the end */
 		if (!ci->phy && !ci->usb_phy) {
 			ret = -ENXIO;
+			printk("ci: no USB PHY, exiting!\n");
 			goto ulpi_exit;
 		}
 	}
@@ -1116,7 +1123,7 @@ static int ci_hdrc_probe(struct platform_device *pdev)
 			goto deinit_gadget;
 		}
 	}
-
+#if 0
 	if (ci_role_switch.fwnode) {
 		ci->role_switch = usb_role_switch_register(dev,
 					&ci_role_switch);
@@ -1125,7 +1132,7 @@ static int ci_hdrc_probe(struct platform_device *pdev)
 			goto deinit_otg;
 		}
 	}
-
+#endif
 	if (ci->roles[CI_ROLE_HOST] && ci->roles[CI_ROLE_GADGET]) {
 		if (ci->is_otg) {
 			ci->role = ci_otg_role(ci);
@@ -1184,8 +1191,7 @@ static int ci_hdrc_probe(struct platform_device *pdev)
 	return 0;
 
 stop:
-	if (ci->role_switch)
-		usb_role_switch_unregister(ci->role_switch);
+	//if (ci->role_switch) usb_role_switch_unregister(ci->role_switch);
 deinit_otg:
 	if (ci->is_otg && ci->roles[CI_ROLE_GADGET])
 		ci_hdrc_otg_destroy(ci);
@@ -1205,8 +1211,7 @@ static int ci_hdrc_remove(struct platform_device *pdev)
 {
 	struct ci_hdrc *ci = platform_get_drvdata(pdev);
 
-	if (ci->role_switch)
-		usb_role_switch_unregister(ci->role_switch);
+//	if (ci->role_switch) usb_role_switch_unregister(ci->role_switch);
 
 	if (ci->supports_runtime_pm) {
 		pm_runtime_get_sync(&pdev->dev);

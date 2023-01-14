@@ -167,6 +167,9 @@ static inline void die_if_kernel(const char *str, struct pt_regs *regs)
 		die(str, regs);
 }
 
+unsigned long find_prev_frame(unsigned long pc, unsigned long ra,
+			      unsigned long *sp, int usermode);
+
 #define current_pt_regs()						\
 ({									\
 	unsigned long sp = (unsigned long)__builtin_frame_address(0);	\

@@ -4689,6 +4689,7 @@ static const struct qcom_reset_map gcc_ipq8074_resets[] = {
 
 static const struct of_device_id gcc_ipq8074_match_table[] = {
 	{ .compatible = "qcom,gcc-ipq8074" },
+	{ .compatible = "qcom,gcc-ipq807x" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, gcc_ipq8074_match_table);

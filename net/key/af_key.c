@@ -1210,7 +1210,7 @@ static struct xfrm_state * pfkey_msg2xfrm_state(struct net *net,
 		} else {
 			int keysize = 0;
 			struct xfrm_algo_desc *a = xfrm_ealg_get_byid(sa->sadb_sa_encrypt);
-			if (!a || !a->pfkey_supported) {
+			if (!a) {
 				err = -ENOSYS;
 				goto out;
 			}

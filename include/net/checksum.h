@@ -20,6 +20,7 @@
 #include <asm/byteorder.h>
 #include <linux/uaccess.h>
 #include <asm/checksum.h>
+#include <asm/unaligned.h>
 
 #ifndef _HAVE_ARCH_COPY_AND_CSUM_FROM_USER
 static inline
@@ -118,14 +119,15 @@ static inline __wsum csum_partial_ext(const void *buff, int len, __wsum sum)
 
 static inline void csum_replace_by_diff(__sum16 *sum, __wsum diff)
 {
-	*sum = csum_fold(csum_add(diff, ~csum_unfold(*sum)));
+	put_unaligned(csum_fold(csum_add(diff, ~csum_unfold(get_unaligned(sum)))),
+		      sum);
 }
 
 static inline void csum_replace4(__sum16 *sum, __be32 from, __be32 to)
 {
 	__wsum tmp = csum_sub(~csum_unfold(*sum), (__force __wsum)from);
 
-	*sum = csum_fold(csum_add(tmp, (__force __wsum)to));
+	put_unaligned(csum_fold(csum_add(tmp, (__force __wsum)to)), sum);
 }
 
 /* Implements RFC 1624 (Incremental Internet Checksum)
@@ -136,7 +138,7 @@ static inline void csum_replace4(__sum16 *sum, __be32 from, __be32 to)
  */
 static inline void csum_replace2(__sum16 *sum, __be16 old, __be16 new)
 {
-	*sum = ~csum16_add(csum16_sub(~(*sum), old), new);
+	put_unaligned(~csum16_add(csum16_sub(~(*sum), old), new), sum);
 }
 
 struct sk_buff;

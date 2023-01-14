@@ -14,7 +14,7 @@
 /* Recommended to rewrite for BENAND */
 #define TOSHIBA_NAND_STATUS_REWRITE_RECOMMENDED	BIT(3)
 
-static int toshiba_nand_benand_eccstatus(struct nand_chip *chip)
+int toshiba_nand_benand_eccstatus(struct nand_chip *chip)
 {
 	struct mtd_info *mtd = nand_to_mtd(chip);
 	int ret;
@@ -31,6 +31,7 @@ static int toshiba_nand_benand_eccstatus(struct nand_chip *chip)
 		mtd->ecc_stats.failed++;
 	} else if (status & TOSHIBA_NAND_STATUS_REWRITE_RECOMMENDED) {
 		/* corrected */
+		pr_info("NAND hwecc: corrected some bits\n");
 		max_bitflips = mtd->bitflip_threshold;
 		mtd->ecc_stats.corrected += max_bitflips;
 	}
@@ -137,6 +138,19 @@ static void toshiba_nand_decode_id(struct nand_chip *chip)
 			chip->base.eccreq.step_size = 0;
 			break;
 		}
+	}
+
+	/* Toshiba BENAND has built-in hardware ECC */
+	if (nand_is_slc(chip) &&
+	    chip->id.data[4] & TOSHIBA_NAND_ID4_IS_BENAND) {
+		pr_info("NAND hwecc: Toshiba BENAND detected\n");
+		chip->options |= NAND_HAS_HW_ECC;
+		/*
+		 * 8-bit ECC is done by nand already. No one disables it!
+		 * No need to do the same in software or nand controller.
+		 * For backward compatibility with ROS v6, let's use 1-bit ecc
+		 */
+		chip->base.eccreq.strength = 1;
 	}
 }
 

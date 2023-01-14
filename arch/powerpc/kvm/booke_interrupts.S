@@ -231,7 +231,7 @@ _GLOBAL(kvmppc_resume_host)
 
 	/* Restore host IVPR before re-enabling interrupts. We cheat and know
 	 * that Linux IVPR is always 0xc0000000. */
-	lis	r3, 0xc000
+	lis	r3, 0x8000
 	mtspr	SPRN_IVPR, r3
 
 	/* Switch to kernel stack and jump to handler. */

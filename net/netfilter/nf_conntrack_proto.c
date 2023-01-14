@@ -457,11 +457,13 @@ retry:
 		cnet->users4++;
 		if (cnet->users4 > 1)
 			goto out_unlock;
+#if 0		
 		err = nf_defrag_ipv4_enable(net);
 		if (err) {
 			cnet->users4 = 0;
 			goto out_unlock;
 		}
+#endif		
 
 		err = nf_register_net_hooks(net, ipv4_conntrack_ops,
 					    ARRAY_SIZE(ipv4_conntrack_ops));

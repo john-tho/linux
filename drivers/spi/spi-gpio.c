@@ -11,6 +11,7 @@
 #include <linux/gpio/consumer.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/delay.h>
 
 #include <linux/spi/spi.h>
 #include <linux/spi/spi_bitbang.h>
@@ -114,7 +115,9 @@ static inline int getmiso(const struct spi_device *spi)
  * reaching even one Mbit/sec (except when we can inline bitops), so for now
  * we'll just assume we never need additional per-bit slowdowns.
  */
-#define spidelay(nsecs)	do {} while (0)
+#ifndef spidelay
+#define spidelay(nsecs)	ndelay(nsecs)
+#endif
 
 #include "spi-bitbang-txrx.h"
 
@@ -205,7 +208,7 @@ static void spi_gpio_chipselect(struct spi_device *spi, int is_active)
 		gpiod_set_value_cansleep(spi_gpio->sck, spi->mode & SPI_CPOL);
 
 	/* Drive chip select line, if we have one */
-	if (spi_gpio->cs_gpios) {
+	if (spi_gpio->cs_gpios && !(spi->mode & SPI_NO_CS)) {
 		struct gpio_desc *cs = spi_gpio->cs_gpios[spi->chip_select];
 
 		/* SPI chip selects are normally active-low */
@@ -431,6 +434,10 @@ static int spi_gpio_probe(struct platform_device *pdev)
 	status = spi_bitbang_init(&spi_gpio->bitbang);
 	if (status)
 		return status;
+#ifdef CONFIG_TILE
+	    extern void init_ccr_spi(struct spi_master *master);	    
+	    init_ccr_spi(master);
+#endif
 
 	return devm_spi_register_master(&pdev->dev, spi_master_get(master));
 }

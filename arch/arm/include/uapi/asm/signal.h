@@ -10,8 +10,13 @@ struct siginfo;
 #ifndef __KERNEL__
 /* Here we must cater to libcs that poke about in kernel headers.  */
 
-#define NSIG		32
-typedef unsigned long sigset_t;
+#define _NSIG		64
+#define _NSIG_BPW	(sizeof(unsigned long) * 8)
+#define _NSIG_WORDS	(_NSIG / _NSIG_BPW)
+
+typedef struct {
+	unsigned long sig[_NSIG_WORDS];
+} sigset_t;
 
 #endif /* __KERNEL__ */
 
@@ -93,6 +98,7 @@ typedef unsigned long sigset_t;
 
 #include <asm-generic/signal-defs.h>
 
+#if 0
 #ifndef __KERNEL__
 /* Here we must cater to libcs that poke about in kernel headers.  */
 
@@ -110,6 +116,7 @@ struct sigaction {
 #define sa_sigaction	_u._sa_sigaction
 
 #endif /* __KERNEL__ */
+#endif
 
 typedef struct sigaltstack {
 	void __user *ss_sp;

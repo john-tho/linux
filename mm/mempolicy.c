@@ -1206,8 +1206,12 @@ static struct page *new_page(struct page *page, unsigned long start)
 	/*
 	 * if !vma, alloc_page_vma() will use task or system default policy
 	 */
+#ifdef CONFIG_HOMECACHE
+	return homecache_alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
+#else
 	return alloc_page_vma(GFP_HIGHUSER_MOVABLE | __GFP_RETRY_MAYFAIL,
 			vma, address);
+#endif	
 }
 #else
 

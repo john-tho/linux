@@ -560,6 +560,7 @@ static const struct device_type mdio_bus_phy_type = {
 
 static int phy_request_driver_module(struct phy_device *dev, u32 phy_id)
 {
+#if 0
 	int ret;
 
 	ret = request_module(MDIO_MODULE_PREFIX MDIO_ID_FMT,
@@ -574,7 +575,7 @@ static int phy_request_driver_module(struct phy_device *dev, u32 phy_id)
 			   ret, (unsigned long)phy_id);
 		return ret;
 	}
-
+#endif
 	return 0;
 }
 

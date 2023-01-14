@@ -95,6 +95,7 @@ int nand_read_param_page_op(struct nand_chip *chip, u8 page, void *buf,
 void nand_decode_ext_id(struct nand_chip *chip);
 void panic_nand_wait(struct nand_chip *chip, unsigned long timeo);
 void sanitize_string(uint8_t *s, size_t len);
+int toshiba_nand_benand_eccstatus(struct nand_chip *chip);
 
 static inline bool nand_has_exec_op(struct nand_chip *chip)
 {

@@ -1,0 +1,39 @@
+/dts-v1/;
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "LHG 5ac";
+	leds {
+		compatible = "leds-rb";
+		user-led {
+			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		};
+		power-led {
+			gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		led1 {
+			gpios = <&tlmm 58 GPIO_ACTIVE_HIGH>;
+		};
+		led2 {
+			gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+		};
+		led3 {
+			gpios = <&tlmm 2 GPIO_ACTIVE_HIGH>;
+		};
+		led4 {
+			gpios = <&tlmm 4 GPIO_ACTIVE_HIGH>;
+		};
+		led5 {
+			gpios = <&tlmm 5 GPIO_ACTIVE_HIGH>;
+		};
+		button {
+			gpios = <&tlmm 63 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+};
+
+&edma {
+	port_map = <4 (-1)>;
+};

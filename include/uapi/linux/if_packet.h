@@ -152,7 +152,9 @@ struct tpacket2_hdr {
 	__u32		tp_nsec;
 	__u16		tp_vlan_tci;
 	__u16		tp_vlan_tpid;
-	__u8		tp_padding[4];
+	__u16		tp_cpuid;
+	__u8		tp_padding[2];
+	__u32		tp_port_ifindex;
 };
 
 struct tpacket_hdr_variant1 {

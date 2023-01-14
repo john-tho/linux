@@ -17,6 +17,10 @@
 
 #include <asm/mmu.h>
 
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -219,6 +223,10 @@ struct page {
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
 	int _last_cpupid;
 #endif
+#if defined(CONFIG_HOMECACHE)
+	/* Where is this page's home cache? */
+	int home;
+#endif /* CONFIG_HOMECACHE */
 } _struct_page_alignment;
 
 static inline atomic_t *compound_mapcount_ptr(struct page *page)
@@ -318,6 +326,9 @@ struct vm_area_struct {
 	 * See vmf_insert_mixed_prot() for discussion.
 	 */
 	pgprot_t vm_page_prot;
+#ifdef CONFIG_HOMECACHE
+	pid_t vm_pid;                   /* If non-zero, pid "owns" this VMA. */
+#endif
 	unsigned long vm_flags;		/* Flags, see mm.h. */
 
 	/*

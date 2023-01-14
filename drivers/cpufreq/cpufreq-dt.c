@@ -141,7 +141,13 @@ static int resources_available(void)
 		return ret;
 	}
 
+	if (of_machine_is_compatible("qcom,ipq6018") ||
+				of_machine_is_compatible("qcom,ipq807x")) {
+		regulator_enable(cpu_reg);
+	} else {
+		regulator_disable(cpu_reg);
 	regulator_put(cpu_reg);
+	}
 	return 0;
 }
 

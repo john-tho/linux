@@ -7,6 +7,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <asm/unaligned.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/errno.h>
@@ -749,10 +750,9 @@ static struct sk_buff *vxlan_gro_receive(struct sock *sk,
 	}
 
 	skb_gro_postpull_rcsum(skb, vh, sizeof(struct vxlanhdr));
+    flags = get_unaligned(&vh->vx_flags);
 
-	flags = vh->vx_flags;
-
-	if ((flags & VXLAN_HF_RCO) && (vs->flags & VXLAN_F_REMCSUM_RX)) {
+	if ((flags & VXLAN_HF_RCO) && (get_unaligned(&vs->flags) & VXLAN_F_REMCSUM_RX)) {
 		vh = vxlan_gro_remcsum(skb, off_vx, vh, sizeof(struct vxlanhdr),
 				       vh->vx_vni, &grc,
 				       !!(vs->flags &
@@ -1664,12 +1664,13 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
 	if (!pskb_may_pull(skb, VXLAN_HLEN))
 		goto drop;
 
-	unparsed = *vxlan_hdr(skb);
+    memcpy(&unparsed, vxlan_hdr(skb), sizeof(unparsed));
+
 	/* VNI flag always required to be set */
 	if (!(unparsed.vx_flags & VXLAN_HF_VNI)) {
 		netdev_dbg(skb->dev, "invalid vxlan flags=%#x vni=%#x\n",
-			   ntohl(vxlan_hdr(skb)->vx_flags),
-			   ntohl(vxlan_hdr(skb)->vx_vni));
+			   ntohl(get_unaligned(&vxlan_hdr(skb)->vx_flags)),
+			   ntohl(get_unaligned(&vxlan_hdr(skb)->vx_vni)));
 		/* Return non vxlan pkt */
 		goto drop;
 	}
@@ -1680,7 +1681,7 @@ static int vxlan_rcv(struct sock *sk, struct sk_buff *skb)
 	if (!vs)
 		goto drop;
 
-	vni = vxlan_vni(vxlan_hdr(skb)->vx_vni);
+	vni = vxlan_vni(get_unaligned(&vxlan_hdr(skb)->vx_vni));
 
 	vxlan = vxlan_vs_find_vni(vs, skb->dev->ifindex, vni);
 	if (!vxlan)
@@ -2182,15 +2183,15 @@ static int vxlan_build_skb(struct sk_buff *skb, struct dst_entry *dst,
 		return err;
 
 	vxh = __skb_push(skb, sizeof(*vxh));
-	vxh->vx_flags = VXLAN_HF_VNI;
-	vxh->vx_vni = vxlan_vni_field(vni);
+	put_unaligned(VXLAN_HF_VNI, &vxh->vx_flags);
+	put_unaligned(vxlan_vni_field(vni), &vxh->vx_vni);
 
 	if (type & SKB_GSO_TUNNEL_REMCSUM) {
 		unsigned int start;
 
 		start = skb_checksum_start_offset(skb) - sizeof(struct vxlanhdr);
-		vxh->vx_vni |= vxlan_compute_rco(start, skb->csum_offset);
-		vxh->vx_flags |= VXLAN_HF_RCO;
+		put_unaligned(vxlan_vni_field(vni) | vxlan_compute_rco(start, skb->csum_offset), &vxh->vx_vni);
+		put_unaligned(VXLAN_HF_VNI | VXLAN_HF_RCO, &vxh->vx_flags);
 
 		if (!skb_is_gso(skb)) {
 			skb->ip_summed = CHECKSUM_NONE;
@@ -2904,6 +2905,7 @@ static int vxlan_change_mtu(struct net_device *dev, int new_mtu)
 	if (lowerdev) {
 		int max_mtu = lowerdev->mtu -
 			      (use_ipv6 ? VXLAN6_HEADROOM : VXLAN_HEADROOM);
+		max_mtu = dev->l2mtu ? dev->l2mtu : max_mtu;
 		if (new_mtu > max_mtu)
 			return -EINVAL;
 	}
@@ -3045,6 +3047,7 @@ static void vxlan_setup(struct net_device *dev)
 	/* MTU range: 68 - 65535 */
 	dev->min_mtu = ETH_MIN_MTU;
 	dev->max_mtu = ETH_MAX_MTU;
+	dev->l2mtu = 65535;
 
 	INIT_LIST_HEAD(&vxlan->next);
 
@@ -3524,6 +3527,7 @@ static void vxlan_config_apply(struct net_device *dev,
 	unsigned short needed_headroom = ETH_HLEN;
 	bool use_ipv6 = !!(conf->flags & VXLAN_F_IPV6);
 	int max_mtu = ETH_MAX_MTU;
+	const int headroom = use_ipv6 ? VXLAN6_HEADROOM : VXLAN_HEADROOM;
 
 	if (!changelink) {
 		if (conf->flags & VXLAN_F_GPE)
@@ -3551,11 +3555,13 @@ static void vxlan_config_apply(struct net_device *dev,
 
 		max_mtu = lowerdev->mtu - (use_ipv6 ? VXLAN6_HEADROOM :
 					   VXLAN_HEADROOM);
-		if (max_mtu < ETH_MIN_MTU)
-			max_mtu = ETH_MIN_MTU;
 
-		if (!changelink && !conf->mtu)
-			dev->mtu = max_mtu;
+		dev->l2mtu = lowerdev->l2mtu > headroom
+				? lowerdev->l2mtu - headroom
+				: 0;
+
+		if (dev->l2mtu && max_mtu > dev->l2mtu)
+			max_mtu = dev->l2mtu;
 	}
 
 	if (dev->mtu > max_mtu)

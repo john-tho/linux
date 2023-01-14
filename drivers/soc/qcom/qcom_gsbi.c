@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014, The Linux foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License rev 2 and
+ * only rev 2 as published by the free Software foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or fITNESS fOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/clk.h>
@@ -13,6 +22,9 @@
 #include <linux/regmap.h>
 #include <linux/mfd/syscon.h>
 #include <dt-bindings/soc/qcom,gsbi.h>
+#include <linux/slab.h>
+#include <linux/dma-mapping.h>
+#include <linux/qcom_scm.h>
 
 #define GSBI_CTRL_REG		0x0000
 #define GSBI_PROTOCOL_SHIFT	4
@@ -23,24 +35,26 @@
 struct crci_config {
 	u32 num_rows;
 	const u32 (*array)[MAX_GSBI];
+	bool is_secure;
 };
 
 static const u32 crci_ipq8064[][MAX_GSBI] = {
 	{
-		0x000003, 0x00000c, 0x000030, 0x0000c0,
-		0x000300, 0x000c00, 0x003000, 0x00c000,
-		0x030000, 0x0c0000, 0x300000, 0xc00000
+		0x001800, 0x006000, 0x000030, 0x0000c0,
+		0x000300, 0x000420, 0x0000C0, 0x000000,
+		0x000000, 0x000000, 0x000000, 0x000000
 	},
 	{
-		0x000003, 0x00000c, 0x000030, 0x0000c0,
-		0x000300, 0x000c00, 0x003000, 0x00c000,
-		0x030000, 0x0c0000, 0x300000, 0xc00000
+		0x000000, 0x000000, 0x000000, 0x000000,
+		0x000000, 0x000020, 0x0000c0, 0x000000,
+		0x000000, 0x000000, 0x000000, 0x000000
 	},
 };
 
 static const struct crci_config config_ipq8064 = {
 	.num_rows = ARRAY_SIZE(crci_ipq8064),
 	.array = crci_ipq8064,
+	.is_secure = false,
 };
 
 static const unsigned int crci_apq8064[][MAX_GSBI] = {
@@ -122,6 +136,43 @@ static const struct of_device_id tcsr_dt_match[] = {
 	{ },
 };
 
+/* scm call to pass CRCI mux configuration for GSBI */
+static void adm_crci_mux_cfg(uint16_t tcsr_reg, uint32_t mask, uint16_t set)
+{
+	uint32_t *ret_status = kzalloc(sizeof(uint32_t), GFP_KERNEL);
+	int ret;
+	struct qcom_scm_tcsr_req tcsr_cmd;
+
+	/* Exit if failed to allocate memory*/
+	if (!ret_status) {
+		pr_err("%s: kzalloc failure\n", __func__);
+		return;
+	}
+
+	tcsr_cmd.tcsr_reg = tcsr_reg;
+	tcsr_cmd.mask = mask;
+	tcsr_cmd.set = set;
+	tcsr_cmd.status = dma_map_single(NULL, ret_status,
+		sizeof(*ret_status), DMA_FROM_DEVICE);
+	ret = dma_mapping_error(NULL, tcsr_cmd.status);
+	if (ret) {
+		pr_err("DMA Mapping Error(api_status)\n");
+		goto exit_err;
+	}
+	ret = qcom_scm_tcsr(SCM_SVC_INFO, SCM_GSBI_ADM_MUX_SEL_CMD, &tcsr_cmd);
+
+	dma_unmap_single(NULL, tcsr_cmd.status, sizeof(*ret_status),
+				DMA_FROM_DEVICE);
+
+	if (ret || *(ret_status)) {
+		pr_err("%s: Error in CRCI_MUX write (%d, 0x%x)\n",
+			__func__, ret, *(ret_status));
+	}
+exit_err:
+	kfree(ret_status);
+	return;
+}
+
 static int gsbi_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -130,7 +181,7 @@ static int gsbi_probe(struct platform_device *pdev)
 	struct resource *res;
 	void __iomem *base;
 	struct gsbi_info *gsbi;
-	int i, ret;
+	int i;
 	u32 mask, gsbi_num;
 	const struct crci_config *config = NULL;
 
@@ -198,12 +249,17 @@ static int gsbi_probe(struct platform_device *pdev)
 		for (i = 0; i < config->num_rows; i++) {
 			mask = config->array[i][gsbi_num - 1];
 
+			if (config->is_secure) {
+				if (gsbi->mode == GSBI_PROT_UART_W_FC)
+					adm_crci_mux_cfg(i, mask, GSBI_CRCI_UART);
+			} else {
 			if (gsbi->mode == GSBI_PROT_SPI)
 				regmap_update_bits(gsbi->tcsr,
 					TCSR_ADM_CRCI_BASE + 4 * i, mask, 0);
 			else
 				regmap_update_bits(gsbi->tcsr,
 					TCSR_ADM_CRCI_BASE + 4 * i, mask, mask);
+			}
 
 		}
 	}
@@ -213,10 +269,7 @@ static int gsbi_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, gsbi);
 
-	ret = of_platform_populate(node, NULL, NULL, &pdev->dev);
-	if (ret)
-		clk_disable_unprepare(gsbi->hclk);
-	return ret;
+	return of_platform_populate(node, NULL, NULL, &pdev->dev);
 }
 
 static int gsbi_remove(struct platform_device *pdev)

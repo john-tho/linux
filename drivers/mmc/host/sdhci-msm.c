@@ -114,6 +114,12 @@
 
 #define MSM_MMC_AUTOSUSPEND_DELAY_MS	50
 
+#define REGULATOR_CTRL  0x01948000
+#define VCC_MASK        0x3
+#define VCC_3V          0x3
+#define VCC_1_8V        0x1
+
+
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
@@ -240,14 +246,17 @@ struct sdhci_msm_host {
 	int pwr_irq;		/* power irq */
 	struct clk *bus_clk;	/* SDHC bus voter clock */
 	struct clk *xo_clk;	/* TCXO clk needed for FLL feature of cm_dll*/
+	unsigned long gcc_rate;
 	struct clk_bulk_data bulk_clks[4]; /* core, iface, cal, sleep clocks */
 	unsigned long clk_rate;
+	unsigned long sdhc_rate;
 	struct mmc_host *mmc;
 	bool use_14lpp_dll_reset;
 	bool tuning_done;
 	bool calibration_done;
 	u8 saved_tuning_phase;
 	bool use_cdclp533;
+	bool cpu_ipq40xx;
 	u32 curr_pwr_state;
 	u32 curr_io_level;
 	wait_queue_head_t pwr_irq_wait;
@@ -339,7 +348,9 @@ static void msm_set_clock_rate_for_bus_mode(struct sdhci_host *host,
 		       curr_ios.timing);
 		return;
 	}
+
 	msm_host->clk_rate = clock;
+	msm_host->gcc_rate = clk_get_rate(core_clk);
 	pr_debug("%s: Setting clock at rate %lu at timing %d\n",
 		 mmc_hostname(host->mmc), clk_get_rate(core_clk),
 		 curr_ios.timing);
@@ -1521,36 +1532,39 @@ static unsigned int sdhci_msm_get_min_clock(struct sdhci_host *host)
 	return SDHCI_MSM_MIN_CLOCK;
 }
 
-/**
- * __sdhci_msm_set_clock - sdhci_msm clock control.
- *
- * Description:
- * MSM controller does not use internal divider and
- * instead directly control the GCC clock as per
- * HW recommendation.
- **/
 static void __sdhci_msm_set_clock(struct sdhci_host *host, unsigned int clock)
 {
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
 	u16 clk;
-	/*
-	 * Keep actual_clock as zero -
-	 * - since there is no divider used so no need of having actual_clock.
-	 * - MSM controller uses SDCLK for data timeout calculation. If
-	 *   actual_clock is zero, host->clock is taken for calculation.
-	 */
-	host->mmc->actual_clock = 0;
+	unsigned long rate = msm_host->gcc_rate;
+	int div = 0, real_div = 0;
 
 	sdhci_writew(host, 0, SDHCI_CLOCK_CONTROL);
 
-	if (clock == 0)
+	if (!clock)
 		return;
 
-	/*
-	 * MSM controller do not use clock divider.
-	 * Thus read SDHCI_CLOCK_CONTROL and only enable
-	 * clock with no divider value programmed.
-	 */
 	clk = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+
+	if (rate <= clock) {
+		div = 0;
+	} else {
+		for (div = 2; div < SDHCI_MAX_DIV_SPEC_300; div +=2) {
+			if ((rate / div) <= clock) break;
+		}
+	}
+	real_div = div;
+	div >>= 1;
+
+	pr_debug("target rate: %u base clock: %lu divisor: %d", clock, rate, real_div);
+
+	clk |= (div & SDHCI_DIV_MASK) << SDHCI_DIVIDER_SHIFT;
+	clk |= ((div & SDHCI_DIV_HI_MASK) >> SDHCI_DIV_MASK_LEN) << SDHCI_DIVIDER_HI_SHIFT;
+
+	host->mmc->actual_clock = rate;
+	msm_host->sdhc_rate = rate / real_div;
+
 	sdhci_enable_clk(host, clk);
 }
 
@@ -1868,11 +1882,125 @@ static const struct sdhci_pltfm_data sdhci_msm_pdata = {
 	.ops = &sdhci_msm_ops,
 };
 
+static int sdhci_msm_start_signal_voltage_switch(struct mmc_host *mmc,
+				      struct mmc_ios *ios)
+{
+	struct sdhci_host *host = mmc_priv(mmc);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = sdhci_pltfm_priv(pltfm_host);
+	u16 ctrl;
+	int ret;
+	unsigned val;
+	void __iomem *reg;
+	/*
+	 * Signal Voltage Switching is only applicable for Host Controllers
+	 * v3.00 and above.
+	 */
+	if (host->version < SDHCI_SPEC_300)
+		return 0;
+
+	ctrl = sdhci_readw(host, SDHCI_HOST_CONTROL2);
+
+	switch (ios->signal_voltage) {
+	case MMC_SIGNAL_VOLTAGE_330:
+		if (msm_host->cpu_ipq40xx) {
+			reg = ioremap(REGULATOR_CTRL, 0x4);
+			val = readl(reg);
+			val &= ~VCC_MASK;
+			val |= VCC_3V;
+			writel(val, reg);
+			iounmap(reg);
+		}
+		if (!(host->flags & SDHCI_SIGNALING_330))
+			return -EINVAL;
+		/* Set 1.8V Signal Enable in the Host Control2 register to 0 */
+		ctrl &= ~SDHCI_CTRL_VDD_180;
+		sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+
+		if (!IS_ERR(mmc->supply.vqmmc)) {
+			ret = mmc_regulator_set_vqmmc(mmc, ios);
+			if (ret) {
+				pr_warn("%s: Switching to 3.3V signalling voltage failed\n",
+					mmc_hostname(mmc));
+				return -EIO;
+			}
+		}
+		/* Wait for 5ms */
+		usleep_range(5000, 5500);
+
+		/* 3.3V regulator output should be stable within 5 ms */
+		ctrl = sdhci_readw(host, SDHCI_HOST_CONTROL2);
+		if (!(ctrl & SDHCI_CTRL_VDD_180))
+			return 0;
+
+		pr_warn("%s: 3.3V regulator output did not became stable\n",
+			mmc_hostname(mmc));
+
+		return -EAGAIN;
+	case MMC_SIGNAL_VOLTAGE_180:
+		if (msm_host->cpu_ipq40xx) {
+			reg = ioremap(REGULATOR_CTRL, 0x4);
+			val = readl(reg);
+			val &= ~VCC_MASK;
+			val |= VCC_1_8V;
+			writel(val, reg);
+			iounmap(reg);
+		}
+		if (!(host->flags & SDHCI_SIGNALING_180))
+			return -EINVAL;
+		if (!IS_ERR(mmc->supply.vqmmc)) {
+			ret = mmc_regulator_set_vqmmc(mmc, ios);
+			if (ret) {
+				pr_warn("%s: Switching to 1.8V signalling voltage failed\n",
+					mmc_hostname(mmc));
+				return -EIO;
+			}
+		}
+
+		/*
+		 * Enable 1.8V Signal Enable in the Host Control2
+		 * register
+		 */
+		ctrl |= SDHCI_CTRL_VDD_180;
+		sdhci_writew(host, ctrl, SDHCI_HOST_CONTROL2);
+
+		/* Some controller need to do more when switching */
+		if (host->ops->voltage_switch)
+			host->ops->voltage_switch(host);
+
+		/* 1.8V regulator output should be stable within 5 ms */
+		ctrl = sdhci_readw(host, SDHCI_HOST_CONTROL2);
+		if (ctrl & SDHCI_CTRL_VDD_180)
+			return 0;
+
+		pr_warn("%s: 1.8V regulator output did not became stable\n",
+			mmc_hostname(mmc));
+
+		return -EAGAIN;
+	case MMC_SIGNAL_VOLTAGE_120:
+		if (!(host->flags & SDHCI_SIGNALING_120))
+			return -EINVAL;
+		if (!IS_ERR(mmc->supply.vqmmc)) {
+			ret = mmc_regulator_set_vqmmc(mmc, ios);
+			if (ret) {
+				pr_warn("%s: Switching to 1.2V signalling voltage failed\n",
+					mmc_hostname(mmc));
+				return -EIO;
+			}
+		}
+		return 0;
+	default:
+		/* No signal voltage switch required */
+		return 0;
+	}
+}
+
 static int sdhci_msm_probe(struct platform_device *pdev)
 {
 	struct sdhci_host *host;
 	struct sdhci_pltfm_host *pltfm_host;
 	struct sdhci_msm_host *msm_host;
+	struct device_node *np = pdev->dev.of_node;
 	struct clk *clk;
 	int ret;
 	u16 host_version, core_minor;
@@ -1891,6 +2019,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	msm_host = sdhci_pltfm_priv(pltfm_host);
 	msm_host->mmc = host->mmc;
 	msm_host->pdev = pdev;
+
+	msm_host->cpu_ipq40xx = of_find_property(np, "cpu-ipq40xx", NULL) ? true : false;
 
 	ret = mmc_of_parse(host->mmc);
 	if (ret)
@@ -1981,6 +2111,17 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		}
 	}
 
+	writel_relaxed(readl_relaxed(msm_host->core_mem + CORE_POWER) |
+			CORE_SW_RST, msm_host->core_mem + CORE_POWER);
+
+	/* SW reset can take upto 10HCLK + 15MCLK cycles. (min 40us) */
+	usleep_range(1000, 5000);
+	if (readl(msm_host->core_mem + CORE_POWER) & CORE_SW_RST) {
+		pr_err("Stuck in reset\n");
+		ret = -ETIMEDOUT;
+		goto clk_disable;
+	}
+
 	/* Reset the vendor spec register to power on reset state */
 	writel_relaxed(CORE_VENDOR_SPEC_POR_VAL,
 			host->ioaddr + msm_offset->core_vendor_spec);
@@ -2025,7 +2166,11 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	 */
 	if (core_major >= 1 && core_minor != 0x11 && core_minor != 0x12) {
 		config = readl_relaxed(host->ioaddr + SDHCI_CAPABILITIES);
-		config |= SDHCI_CAN_VDD_300 | SDHCI_CAN_DO_8BIT;
+		config |= SDHCI_CAN_VDD_180 |
+			  SDHCI_CAN_VDD_300 |
+			  SDHCI_CAN_VDD_330 |
+			  SDHCI_CAN_DO_8BIT |
+			  SDHCI_CAN_64BIT;
 		writel_relaxed(config, host->ioaddr +
 				msm_offset->core_vendor_spec_capabilities0);
 	}
@@ -2076,6 +2221,8 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pm_runtime_use_autosuspend(&pdev->dev);
 
 	host->mmc_host_ops.execute_tuning = sdhci_msm_execute_tuning;
+	host->mmc_host_ops.start_signal_voltage_switch = sdhci_msm_start_signal_voltage_switch;
+
 	if (of_property_read_bool(node, "supports-cqe"))
 		ret = sdhci_msm_cqe_add_host(host, pdev);
 	else

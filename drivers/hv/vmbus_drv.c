@@ -18,6 +18,7 @@
 #include <linux/acpi.h>
 #include <linux/completion.h>
 #include <linux/hyperv.h>
+#include <linux/crash_dump.h>
 #include <linux/kernel_stat.h>
 #include <linux/clockchips.h>
 #include <linux/cpu.h>
@@ -860,6 +861,9 @@ static int vmbus_probe(struct device *child_device)
 	struct hv_device *dev = device_to_hv_device(child_device);
 	const struct hv_vmbus_device_id *dev_id;
 
+	if (is_kdump_kernel())
+		return -ENODEV;
+
 	dev_id = hv_vmbus_get_id(drv, dev);
 	if (drv->probe) {
 		ret = drv->probe(dev, dev_id);
@@ -1427,6 +1431,9 @@ err_alloc:
 int __vmbus_driver_register(struct hv_driver *hv_driver, struct module *owner, const char *mod_name)
 {
 	int ret;
+
+	if (is_kdump_kernel())
+		return 0;
 
 	pr_info("registering driver %s\n", hv_driver->name);
 
@@ -2363,6 +2370,9 @@ static int __init hv_acpi_init(void)
 
 	if (!hv_is_hyperv_initialized())
 		return -ENODEV;
+
+	if (is_kdump_kernel())
+		return 0;
 
 	init_completion(&probe_event);
 

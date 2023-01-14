@@ -239,6 +239,12 @@ int esp6_output_head(struct xfrm_state *x, struct sk_buff *skb, struct esp_info 
 			tail = skb_tail_pointer(trailer);
 
 			goto skip_cow;
+                // XXX MT hw accelerators always operate in place
+                // except on platforms where we don't have them
+#if defined(__i386__) \
+    || defined(__x86_64__) \
+    || (defined(__mips__) && !defined(CONFIG_SMP))
+
 		} else if ((skb_shinfo(skb)->nr_frags < MAX_SKB_FRAGS)
 			   && !skb_has_frag_list(skb)) {
 			int allocsize;
@@ -290,6 +296,10 @@ int esp6_output_head(struct xfrm_state *x, struct sk_buff *skb, struct esp_info 
 	}
 
 cow:
+#else
+		}
+	}
+#endif
 	nfrags = skb_cow_data(skb, tailen, &trailer);
 	if (nfrags < 0)
 		goto out;

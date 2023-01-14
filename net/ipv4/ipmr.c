@@ -22,6 +22,7 @@
  */
 
 #include <linux/uaccess.h>
+#include <asm/unaligned.h>
 #include <linux/types.h>
 #include <linux/cache.h>
 #include <linux/capability.h>
@@ -79,6 +80,15 @@ struct ipmr_result {
 
 static DEFINE_RWLOCK(mrt_lock);
 
+static struct vif_device *vif_find(struct mr_table *mrt, int vifi) {
+	struct vif_device *i;
+
+	list_for_each_entry(i, &mrt->vif_list, list) {
+		if (i->index == vifi) return i;
+	}
+	return NULL;
+}
+
 /* Multicast router control variables */
 
 /* Special spinlock for queue of unresolved entries */
@@ -101,7 +111,7 @@ static void ip_mr_forward(struct net *net, struct mr_table *mrt,
 			  struct net_device *dev, struct sk_buff *skb,
 			  struct mfc_cache *cache, int local);
 static int ipmr_cache_report(struct mr_table *mrt,
-			     struct sk_buff *pkt, vifi_t vifi, int assert);
+			     struct sk_buff *pkt, struct vif_device *vif, int assert);
 static void mroute_netlink_event(struct mr_table *mrt, struct mfc_cache *mfc,
 				 int cmd);
 static void igmpmsg_netlink_event(struct mr_table *mrt, struct sk_buff *pkt);
@@ -537,7 +547,7 @@ static netdev_tx_t reg_vif_xmit(struct sk_buff *skb, struct net_device *dev)
 	read_lock(&mrt_lock);
 	dev->stats.tx_bytes += skb->len;
 	dev->stats.tx_packets++;
-	ipmr_cache_report(mrt, skb, mrt->mroute_reg_vif_num, IGMPMSG_WHOLEPKT);
+	ipmr_cache_report(mrt, skb, mrt->reg_vif, IGMPMSG_WHOLEPKT);
 	read_unlock(&mrt_lock);
 	kfree_skb(skb);
 	return NETDEV_TX_OK;
@@ -618,8 +628,8 @@ static int __pim_rcv(struct mr_table *mrt, struct sk_buff *skb,
 		return 1;
 
 	read_lock(&mrt_lock);
-	if (mrt->mroute_reg_vif_num >= 0)
-		reg_dev = mrt->vif_table[mrt->mroute_reg_vif_num].dev;
+	if (mrt->reg_vif)
+		reg_dev = mrt->reg_vif->dev;
 	read_unlock(&mrt_lock);
 
 	if (!reg_dev)
@@ -666,6 +676,19 @@ static int call_ipmr_mfc_entry_notifiers(struct net *net,
  *	vif_delete - Delete a VIF entry
  *	@notify: Set to 1, if the caller is a notifier_call
  */
+
+static void vif_delete_from_mfc(struct vif_device *vif, struct mfc_cache *c) {
+	unsigned count = c->_c.mfc_un.res.output_dev_count;
+	unsigned i;
+
+	for (i = 0; i < count; ++i) {
+		if (c->_c.mfc_un.res.output_devs[i] == vif) {
+			c->_c.mfc_un.res.output_devs[i] = NULL;
+			break;
+		}
+	}
+}
+
 static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		      struct list_head *head)
 {
@@ -673,13 +696,13 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 	struct vif_device *v;
 	struct net_device *dev;
 	struct in_device *in_dev;
+	struct mr_mfc *c, *tmp;
 
-	if (vifi < 0 || vifi >= mrt->maxvif)
+	v = vif_find(mrt, vifi);
+	if (!v) {
 		return -EADDRNOTAVAIL;
+	}
 
-	v = &mrt->vif_table[vifi];
-
-	if (VIF_EXISTS(mrt, vifi))
 		call_ipmr_vif_entry_notifiers(net, FIB_EVENT_VIF_DEL, v, vifi,
 					      mrt->id);
 
@@ -692,18 +715,15 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		return -EADDRNOTAVAIL;
 	}
 
-	if (vifi == mrt->mroute_reg_vif_num)
-		mrt->mroute_reg_vif_num = -1;
 
-	if (vifi + 1 == mrt->maxvif) {
-		int tmp;
-
-		for (tmp = vifi - 1; tmp >= 0; tmp--) {
-			if (VIF_EXISTS(mrt, tmp))
-				break;
-		}
-		mrt->maxvif = tmp+1;
+	/* remove vif from existing routes */
+	list_for_each_entry_safe(c, tmp, &mrt->mfc_cache_list, list) {
+	    vif_delete_from_mfc(v, (struct mfc_cache *) c);
 	}
+
+
+	if (v == mrt->reg_vif)
+		mrt->reg_vif = NULL;
 
 	write_unlock_bh(&mrt_lock);
 
@@ -722,6 +742,9 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		unregister_netdevice_queue(dev, head);
 
 	dev_put(dev);
+
+	list_del(&v->list);
+	kfree(v);
 	return 0;
 }
 
@@ -807,42 +830,20 @@ out:
 	spin_unlock(&mfc_unres_lock);
 }
 
-/* Fill oifs list. It is called under write locked mrt_lock. */
-static void ipmr_update_thresholds(struct mr_table *mrt, struct mr_mfc *cache,
-				   unsigned char *ttls)
-{
-	int vifi;
-
-	cache->mfc_un.res.minvif = MAXVIFS;
-	cache->mfc_un.res.maxvif = 0;
-	memset(cache->mfc_un.res.ttls, 255, MAXVIFS);
-
-	for (vifi = 0; vifi < mrt->maxvif; vifi++) {
-		if (VIF_EXISTS(mrt, vifi) &&
-		    ttls[vifi] && ttls[vifi] < 255) {
-			cache->mfc_un.res.ttls[vifi] = ttls[vifi];
-			if (cache->mfc_un.res.minvif > vifi)
-				cache->mfc_un.res.minvif = vifi;
-			if (cache->mfc_un.res.maxvif <= vifi)
-				cache->mfc_un.res.maxvif = vifi + 1;
-		}
-	}
-	cache->mfc_un.res.lastuse = jiffies;
-}
-
 static int vif_add(struct net *net, struct mr_table *mrt,
 		   struct vifctl *vifc, int mrtsock)
 {
 	struct netdev_phys_item_id ppid = { };
 	int vifi = vifc->vifc_vifi;
-	struct vif_device *v = &mrt->vif_table[vifi];
+	struct vif_device *v = vif_find(mrt, vifi);
 	struct net_device *dev;
 	struct in_device *in_dev;
 	int err;
 
 	/* Is vif busy ? */
-	if (VIF_EXISTS(mrt, vifi))
+	if (v) {
 		return -EADDRINUSE;
+	}
 
 	switch (vifc->vifc_flags) {
 	case VIFF_REGISTER:
@@ -851,7 +852,7 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 		/* Special Purpose VIF in PIM
 		 * All the packets will be sent to the daemon
 		 */
-		if (mrt->mroute_reg_vif_num >= 0)
+		if (mrt->reg_vif)
 			return -EADDRINUSE;
 		dev = ipmr_reg_vif(net, mrt);
 		if (!dev)
@@ -902,6 +903,15 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 		dev_put(dev);
 		return -EADDRNOTAVAIL;
 	}
+
+	v = kmalloc(sizeof(struct vif_device), GFP_KERNEL);
+	if (!v) {
+		return -ENOMEM;
+	}
+	memset(v, 0, sizeof(struct vif_device));
+	v->index = vifi;
+	list_add(&v->list, &mrt->vif_list);
+
 	IPV4_DEVCONF(in_dev->cnf, MC_FORWARDING)++;
 	inet_netconf_notify_devconf(net, RTM_NEWNETCONF, NETCONFA_MC_FORWARDING,
 				    dev->ifindex, &in_dev->cnf);
@@ -928,9 +938,7 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 	write_lock_bh(&mrt_lock);
 	v->dev = dev;
 	if (v->flags & VIFF_REGISTER)
-		mrt->mroute_reg_vif_num = vifi;
-	if (vifi+1 > mrt->maxvif)
-		mrt->maxvif = vifi+1;
+		mrt->reg_vif = v;
 	write_unlock_bh(&mrt_lock);
 	call_ipmr_vif_entry_notifiers(net, FIB_EVENT_VIF_ADD, v, vifi, mrt->id);
 	return 0;
@@ -949,9 +957,20 @@ static struct mfc_cache *ipmr_cache_find(struct mr_table *mrt,
 	return mr_mfc_find(mrt, &arg);
 }
 
+static int ipmr_cache_has_vif(struct mfc_cache *c, struct vif_device *vif)
+{
+	unsigned i;
+
+	for (i = 0; i < c->_c.mfc_un.res.output_dev_count; ++i) {
+		if (c->_c.mfc_un.res.output_devs[i] == vif)
+			return 1;
+	}
+	return 0;
+}
+
 /* Look for a (*,G) entry */
 static struct mfc_cache *ipmr_cache_find_any(struct mr_table *mrt,
-					     __be32 mcastgrp, int vifi)
+					     __be32 mcastgrp, struct vif_device *vif)
 {
 	struct mfc_cache_cmp_arg arg = {
 			.mfc_mcastgrp = mcastgrp,
@@ -959,8 +978,8 @@ static struct mfc_cache *ipmr_cache_find_any(struct mr_table *mrt,
 	};
 
 	if (mcastgrp == htonl(INADDR_ANY))
-		return mr_mfc_find_any_parent(mrt, vifi);
-	return mr_mfc_find_any(mrt, vifi, &arg);
+		return mr_mfc_find_any_parent(mrt, vif);
+	return mr_mfc_find_any(mrt, vif, &arg);
 }
 
 /* Look for a (S,G,iif) entry if parent != -1 */
@@ -983,7 +1002,8 @@ static struct mfc_cache *ipmr_cache_alloc(void)
 
 	if (c) {
 		c->_c.mfc_un.res.last_assert = jiffies - MFC_ASSERT_THRESH - 1;
-		c->_c.mfc_un.res.minvif = MAXVIFS;
+		c->_c.mfc_un.res.output_dev_count = 0;
+		c->_c.mfc_un.res.output_devs = NULL;
 		c->_c.free = ipmr_cache_free_rcu;
 		refcount_set(&c->_c.mfc_un.res.refcount, 1);
 	}
@@ -1039,7 +1059,7 @@ static void ipmr_cache_resolve(struct net *net, struct mr_table *mrt,
  * Called under mrt_lock.
  */
 static int ipmr_cache_report(struct mr_table *mrt,
-			     struct sk_buff *pkt, vifi_t vifi, int assert)
+			     struct sk_buff *pkt, struct vif_device *vif, int assert)
 {
 	const int ihl = ip_hdrlen(pkt);
 	struct sock *mroute_sk;
@@ -1070,9 +1090,9 @@ static int ipmr_cache_report(struct mr_table *mrt,
 		msg->im_msgtype = assert;
 		msg->im_mbz = 0;
 		if (assert == IGMPMSG_WRVIFWHOLE)
-			msg->im_vif = vifi;
+			msg->im_vif = vif->index;
 		else
-			msg->im_vif = mrt->mroute_reg_vif_num;
+			msg->im_vif = mrt->reg_vif ? mrt->reg_vif->index : -1;
 		ip_hdr(skb)->ihl = sizeof(struct iphdr) >> 2;
 		ip_hdr(skb)->tot_len = htons(ntohs(ip_hdr(pkt)->tot_len) +
 					     sizeof(struct iphdr));
@@ -1084,7 +1104,7 @@ static int ipmr_cache_report(struct mr_table *mrt,
 		/* Flag to the kernel this is a route add */
 		ip_hdr(skb)->protocol = 0;
 		msg = (struct igmpmsg *)skb_network_header(skb);
-		msg->im_vif = vifi;
+		msg->im_vif = vif ? vif->index : -1;
 		skb_dst_set(skb, dst_clone(skb_dst(pkt)));
 		/* Add our header */
 		igmp = skb_put(skb, sizeof(struct igmphdr));
@@ -1117,7 +1137,7 @@ static int ipmr_cache_report(struct mr_table *mrt,
 }
 
 /* Queue a packet for resolution. It gets locked cache entry! */
-static int ipmr_cache_unresolved(struct mr_table *mrt, vifi_t vifi,
+static int ipmr_cache_unresolved(struct mr_table *mrt, struct vif_device *vif,
 				 struct sk_buff *skb, struct net_device *dev)
 {
 	const struct iphdr *iph = ip_hdr(skb);
@@ -1145,12 +1165,12 @@ static int ipmr_cache_unresolved(struct mr_table *mrt, vifi_t vifi,
 		}
 
 		/* Fill in the new cache entry */
-		c->_c.mfc_parent = -1;
+		c->_c.mfc_parent	= NULL;
 		c->mfc_origin	= iph->saddr;
 		c->mfc_mcastgrp	= iph->daddr;
 
 		/* Reflect first query at mrouted. */
-		err = ipmr_cache_report(mrt, skb, vifi, IGMPMSG_NOCACHE);
+		err = ipmr_cache_report(mrt, skb, vif, IGMPMSG_NOCACHE);
 
 		if (err < 0) {
 			/* If the report failed throw the cache entry
@@ -1212,16 +1232,56 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc, int parent)
 	return 0;
 }
 
+static int ipmr_update_output_devs(struct mr_table *mrt,
+				   struct mfc_cache *c, struct mfcctl *mfc,
+				   char __user *opts) {
+	int count = mfc->mfcc_output_dev_cnt;
+	int i;
+	unsigned *temp;
+
+	if (c->_c.mfc_un.res.output_devs) {
+		kfree(c->_c.mfc_un.res.output_devs);
+		c->_c.mfc_un.res.output_devs = NULL;
+	}
+	c->_c.mfc_un.res.output_dev_count = 0;
+
+	if (!count) {
+		return 0;
+	}
+
+	temp = kmalloc(count * sizeof(unsigned), GFP_ATOMIC);
+	if (!temp)
+		return -ENOMEM;
+
+	c->_c.mfc_un.res.output_devs =
+		kmalloc(count * sizeof(struct vif_device *), GFP_ATOMIC);
+	if (!c->_c.mfc_un.res.output_devs) {
+		kfree(temp);
+		return -ENOMEM;
+	}
+
+	if (copy_from_user(temp, opts, count * sizeof(unsigned))) {
+		kfree(temp);
+		return -EFAULT;
+	}
+
+	c->_c.mfc_un.res.output_dev_count = count;
+	for (i = 0; i < count; ++i) {
+		c->_c.mfc_un.res.output_devs[i] = vif_find(mrt, temp[i]);
+	}
+	kfree(temp);
+
+	return 0;
+}
+
 static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
-			struct mfcctl *mfc, int mrtsock, int parent)
+			struct mfcctl *mfc, int mrtsock, int parent,
+			char __user *opts)
 {
 	struct mfc_cache *uc, *c;
 	struct mr_mfc *_uc;
 	bool found;
 	int ret;
-
-	if (mfc->mfcc_parent >= MAXVIFS)
-		return -ENFILE;
 
 	/* The entries are added/deleted only under RTNL */
 	rcu_read_lock();
@@ -1230,10 +1290,17 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	rcu_read_unlock();
 	if (c) {
 		write_lock_bh(&mrt_lock);
-		c->_c.mfc_parent = mfc->mfcc_parent;
-		ipmr_update_thresholds(mrt, &c->_c, mfc->mfcc_ttls);
+		ret = ipmr_update_output_devs(mrt, c, mfc, opts);
+		if (ret) {
+			write_unlock_bh(&mrt_lock);
+			return ret;
+		}
+		c->_c.mfc_parent = vif_find(mrt, mfc->mfcc_parent);
 		if (!mrtsock)
 			c->_c.mfc_flags |= MFC_STATIC;
+		c->_c.mfc_un.res.pkt = 0;
+		c->_c.mfc_un.res.bytes = 0;
+		c->_c.mfc_un.res.wrong_if = 0;
 		write_unlock_bh(&mrt_lock);
 		call_ipmr_mfc_entry_notifiers(net, FIB_EVENT_ENTRY_REPLACE, c,
 					      mrt->id);
@@ -1249,10 +1316,15 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	if (!c)
 		return -ENOMEM;
 
+	c->_c.mfc_un.res.output_devs = NULL;
+	ret = ipmr_update_output_devs(mrt, c, mfc, opts);
+	if (ret) {
+		ipmr_cache_free(c);
+		return ret;
+	}
 	c->mfc_origin = mfc->mfcc_origin.s_addr;
 	c->mfc_mcastgrp = mfc->mfcc_mcastgrp.s_addr;
-	c->_c.mfc_parent = mfc->mfcc_parent;
-	ipmr_update_thresholds(mrt, &c->_c, mfc->mfcc_ttls);
+	c->_c.mfc_parent = vif_find(mrt, mfc->mfcc_parent);
 	if (!mrtsock)
 		c->_c.mfc_flags |= MFC_STATIC;
 
@@ -1299,16 +1371,17 @@ static void mroute_clean_tables(struct mr_table *mrt, int flags)
 	struct mr_mfc *c, *tmp;
 	struct mfc_cache *cache;
 	LIST_HEAD(list);
-	int i;
 
 	/* Shut down all active vif entries */
 	if (flags & (MRT_FLUSH_VIFS | MRT_FLUSH_VIFS_STATIC)) {
-		for (i = 0; i < mrt->maxvif; i++) {
-			if (((mrt->vif_table[i].flags & VIFF_STATIC) &&
+		struct vif_device *v, *n;
+
+		list_for_each_entry_safe(v, n, &mrt->vif_list, list) {
+			if (((v->flags & VIFF_STATIC) &&
 			     !(flags & MRT_FLUSH_VIFS_STATIC)) ||
-			    (!(mrt->vif_table[i].flags & VIFF_STATIC) && !(flags & MRT_FLUSH_VIFS)))
+			    (!(v->flags & VIFF_STATIC) && !(flags & MRT_FLUSH_VIFS)))
 				continue;
-			vif_delete(mrt, i, 0, &list);
+			vif_delete(mrt, v->index, 0, &list);
 		}
 		unregister_netdevice_many(&list);
 	}
@@ -1448,10 +1521,6 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval,
 			ret = -EFAULT;
 			break;
 		}
-		if (vif.vifc_vifi >= MAXVIFS) {
-			ret = -ENFILE;
-			break;
-		}
 		if (optname == MRT_ADD_VIF) {
 			ret = vif_add(net, mrt, &vif,
 				      sk == rtnl_dereference(mrt->mroute_sk));
@@ -1468,7 +1537,7 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval,
 		/* fall through */
 	case MRT_ADD_MFC_PROXY:
 	case MRT_DEL_MFC_PROXY:
-		if (optlen != sizeof(mfc)) {
+		if (optlen < sizeof(mfc)) {
 			ret = -EINVAL;
 			break;
 		}
@@ -1483,7 +1552,8 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval,
 		else
 			ret = ipmr_mfc_add(net, mrt, &mfc,
 					   sk == rtnl_dereference(mrt->mroute_sk),
-					   parent);
+					   parent,
+					   optval + sizeof(mfc));
 		break;
 	case MRT_FLUSH:
 		if (optlen != sizeof(val)) {
@@ -1626,16 +1696,13 @@ int ipmr_ioctl(struct sock *sk, int cmd, void __user *arg)
 	case SIOCGETVIFCNT:
 		if (copy_from_user(&vr, arg, sizeof(vr)))
 			return -EFAULT;
-		if (vr.vifi >= mrt->maxvif)
-			return -EINVAL;
-		vr.vifi = array_index_nospec(vr.vifi, mrt->maxvif);
 		read_lock(&mrt_lock);
-		vif = &mrt->vif_table[vr.vifi];
-		if (VIF_EXISTS(mrt, vr.vifi)) {
-			vr.icount = vif->pkt_in;
-			vr.ocount = vif->pkt_out;
-			vr.ibytes = vif->bytes_in;
-			vr.obytes = vif->bytes_out;
+		vif = vif_find(mrt, vr.vifi);
+		if (vif) {
+			vr.icount=vif->pkt_in;
+			vr.ocount=vif->pkt_out;
+			vr.ibytes=vif->bytes_in;
+			vr.obytes=vif->bytes_out;
 			read_unlock(&mrt_lock);
 
 			if (copy_to_user(arg, &vr, sizeof(vr)))
@@ -1705,6 +1772,8 @@ int ipmr_compat_ioctl(struct sock *sk, unsigned int cmd, void __user *arg)
 			return -EINVAL;
 		vr.vifi = array_index_nospec(vr.vifi, mrt->maxvif);
 		read_lock(&mrt_lock);
+		BUG();
+/*
 		vif = &mrt->vif_table[vr.vifi];
 		if (VIF_EXISTS(mrt, vr.vifi)) {
 			vr.icount = vif->pkt_in;
@@ -1717,6 +1786,7 @@ int ipmr_compat_ioctl(struct sock *sk, unsigned int cmd, void __user *arg)
 				return -EFAULT;
 			return 0;
 		}
+*/
 		read_unlock(&mrt_lock);
 		return -EADDRNOTAVAIL;
 	case SIOCGETSGCNT:
@@ -1748,17 +1818,17 @@ static int ipmr_device_event(struct notifier_block *this, unsigned long event, v
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct net *net = dev_net(dev);
 	struct mr_table *mrt;
-	struct vif_device *v;
-	int ct;
+	struct vif_device *v, *n;
+	LIST_HEAD(list);
 
 	if (event != NETDEV_UNREGISTER)
 		return NOTIFY_DONE;
 
 	ipmr_for_each_table(mrt, net) {
-		v = &mrt->vif_table[0];
-		for (ct = 0; ct < mrt->maxvif; ct++, v++) {
-			if (v->dev == dev)
-				vif_delete(mrt, ct, 1, NULL);
+		list_for_each_entry_safe(v, n, &mrt->vif_list, list) {
+			if (v->dev == dev) {
+				vif_delete(mrt, v->index, 1, NULL);
+			}
 		}
 	}
 	return NOTIFY_DONE;
@@ -1815,11 +1885,9 @@ static inline int ipmr_forward_finish(struct net *net, struct sock *sk,
 
 #ifdef CONFIG_NET_SWITCHDEV
 static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
-				   int in_vifi, int out_vifi)
+				   struct vif_device *in_vif,
+				   struct vif_device *out_vif)
 {
-	struct vif_device *out_vif = &mrt->vif_table[out_vifi];
-	struct vif_device *in_vif = &mrt->vif_table[in_vifi];
-
 	if (!skb->offload_l3_fwd_mark)
 		return false;
 	if (!out_vif->dev_parent_id.id_len || !in_vif->dev_parent_id.id_len)
@@ -1829,7 +1897,8 @@ static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
 }
 #else
 static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
-				   int in_vifi, int out_vifi)
+				   struct vif_device *in_vif,
+				   struct vif_device *out_vif)
 {
 	return false;
 }
@@ -1838,10 +1907,10 @@ static bool ipmr_forward_offloaded(struct sk_buff *skb, struct mr_table *mrt,
 /* Processing handlers for ipmr_forward */
 
 static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
-			    int in_vifi, struct sk_buff *skb, int vifi)
+			    struct vif_device *in_vif, struct sk_buff *skb,
+			    struct vif_device *vif)
 {
 	const struct iphdr *iph = ip_hdr(skb);
-	struct vif_device *vif = &mrt->vif_table[vifi];
 	struct net_device *dev;
 	struct rtable *rt;
 	struct flowi4 fl4;
@@ -1855,11 +1924,11 @@ static void ipmr_queue_xmit(struct net *net, struct mr_table *mrt,
 		vif->bytes_out += skb->len;
 		vif->dev->stats.tx_bytes += skb->len;
 		vif->dev->stats.tx_packets++;
-		ipmr_cache_report(mrt, skb, vifi, IGMPMSG_WHOLEPKT);
+		ipmr_cache_report(mrt, skb, vif, IGMPMSG_WHOLEPKT);
 		goto out_free;
 	}
 
-	if (ipmr_forward_offloaded(skb, mrt, in_vifi, vifi))
+	if (ipmr_forward_offloaded(skb, mrt, in_vif, vif))
 		goto out_free;
 
 	if (vif->flags & VIFF_TUNNEL) {
@@ -1937,15 +2006,17 @@ out_free:
 	kfree_skb(skb);
 }
 
-static int ipmr_find_vif(struct mr_table *mrt, struct net_device *dev)
+static struct vif_device *ipmr_find_vif(struct mr_table *mrt,
+					struct net_device *dev)
 {
-	int ct;
+	struct vif_device *i;
 
-	for (ct = mrt->maxvif-1; ct >= 0; ct--) {
-		if (mrt->vif_table[ct].dev == dev)
-			break;
+	list_for_each_entry(i, &mrt->vif_list, list) {
+		if (i->dev == dev) {
+			return i;
+		}
 	}
-	return ct;
+	return NULL;
 }
 
 /* "local" means that we should preserve one skb (for local delivery) */
@@ -1953,29 +2024,29 @@ static void ip_mr_forward(struct net *net, struct mr_table *mrt,
 			  struct net_device *dev, struct sk_buff *skb,
 			  struct mfc_cache *c, int local)
 {
-	int true_vifi = ipmr_find_vif(mrt, dev);
-	int psend = -1;
-	int vif, ct;
+	struct vif_device *psend = NULL;
+	struct vif_device *v;
+	int i;
+	struct vif_device *true_vif = ipmr_find_vif(mrt, dev);
 
-	vif = c->_c.mfc_parent;
+	v = c->_c.mfc_parent;
 	c->_c.mfc_un.res.pkt++;
 	c->_c.mfc_un.res.bytes += skb->len;
 	c->_c.mfc_un.res.lastuse = jiffies;
 
-	if (c->mfc_origin == htonl(INADDR_ANY) && true_vifi >= 0) {
+	if (c->mfc_origin == htonl(INADDR_ANY) && true_vif) {
 		struct mfc_cache *cache_proxy;
 
 		/* For an (*,G) entry, we only check that the incomming
 		 * interface is part of the static tree.
 		 */
-		cache_proxy = mr_mfc_find_any_parent(mrt, vif);
-		if (cache_proxy &&
-		    cache_proxy->_c.mfc_un.res.ttls[true_vifi] < 255)
+		cache_proxy = mr_mfc_find_any_parent(mrt, true_vif);
+		if (cache_proxy)
 			goto forward;
 	}
 
 	/* Wrong interface: drop packet and (maybe) send PIM assert. */
-	if (mrt->vif_table[vif].dev != dev) {
+	if (!v || v->dev != dev) {
 		if (rt_is_output_route(skb_rtable(skb))) {
 			/* It is our own packet, looped back.
 			 * Very complicated situation...
@@ -1993,37 +2064,45 @@ static void ip_mr_forward(struct net *net, struct mr_table *mrt,
 
 		c->_c.mfc_un.res.wrong_if++;
 
-		if (true_vifi >= 0 && mrt->mroute_do_assert &&
+		if (true_vif && mrt->mroute_do_assert) {
+			int xxx = 0;
+			for (i = 0; i < c->_c.mfc_un.res.output_dev_count; ++i) {
+				struct vif_device *x = c->_c.mfc_un.res.output_devs[i];
+				if (x == true_vif) {
+					xxx = 1;
+					break;
+				}
+			}
+
 		    /* pimsm uses asserts, when switching from RPT to SPT,
 		     * so that we cannot check that packet arrived on an oif.
 		     * It is bad, but otherwise we would need to move pretty
 		     * large chunk of pimd to kernel. Ough... --ANK
 		     */
-		    (mrt->mroute_do_pim ||
-		     c->_c.mfc_un.res.ttls[true_vifi] < 255) &&
+			if ((mrt->mroute_do_pim || xxx) &&
 		    time_after(jiffies,
-			       c->_c.mfc_un.res.last_assert +
-			       MFC_ASSERT_THRESH)) {
+				       c->_c.mfc_un.res.last_assert + MFC_ASSERT_THRESH)) {
 			c->_c.mfc_un.res.last_assert = jiffies;
-			ipmr_cache_report(mrt, skb, true_vifi, IGMPMSG_WRONGVIF);
+				ipmr_cache_report(mrt, skb, true_vif, IGMPMSG_WRONGVIF);
 			if (mrt->mroute_do_wrvifwhole)
-				ipmr_cache_report(mrt, skb, true_vifi,
+				    ipmr_cache_report(mrt, skb, true_vif,
 						  IGMPMSG_WRVIFWHOLE);
 		}
+		}
+
 		goto dont_forward;
 	}
 
 forward:
-	mrt->vif_table[vif].pkt_in++;
-	mrt->vif_table[vif].bytes_in += skb->len;
+	v->pkt_in++;
+	v->bytes_in+=skb->len;
 
 	/* Forward the frame */
 	if (c->mfc_origin == htonl(INADDR_ANY) &&
 	    c->mfc_mcastgrp == htonl(INADDR_ANY)) {
-		if (true_vifi >= 0 &&
-		    true_vifi != c->_c.mfc_parent &&
-		    ip_hdr(skb)->ttl >
-				c->_c.mfc_un.res.ttls[c->_c.mfc_parent]) {
+		if (true_vif &&
+		    true_vif != c->_c.mfc_parent &&
+		    ip_hdr(skb)->ttl > c->_c.mfc_parent->threshold) {
 			/* It's an (*,*) entry and the packet is not coming from
 			 * the upstream: forward the packet to the upstream
 			 * only.
@@ -2033,32 +2112,34 @@ forward:
 		}
 		goto dont_forward;
 	}
-	for (ct = c->_c.mfc_un.res.maxvif - 1;
-	     ct >= c->_c.mfc_un.res.minvif; ct--) {
+	for (i = 0; i < c->_c.mfc_un.res.output_dev_count; ++i) {
+		struct vif_device *x = c->_c.mfc_un.res.output_devs[i];
+		if (!x) continue;
+
 		/* For (*,G) entry, don't forward to the incoming interface */
 		if ((c->mfc_origin != htonl(INADDR_ANY) ||
-		     ct != true_vifi) &&
-		    ip_hdr(skb)->ttl > c->_c.mfc_un.res.ttls[ct]) {
-			if (psend != -1) {
+		     x != true_vif) &&
+		    ip_hdr(skb)->ttl > x->threshold) {
+			if (psend) {
 				struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 				if (skb2)
-					ipmr_queue_xmit(net, mrt, true_vifi,
+					ipmr_queue_xmit(net, mrt, true_vif,
 							skb2, psend);
 			}
-			psend = ct;
+			psend = x;
 		}
 	}
 last_forward:
-	if (psend != -1) {
+	if (psend) {
 		if (local) {
 			struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
 
 			if (skb2)
-				ipmr_queue_xmit(net, mrt, true_vifi, skb2,
+				ipmr_queue_xmit(net, mrt, true_vif, skb2,
 						psend);
 		} else {
-			ipmr_queue_xmit(net, mrt, true_vifi, skb, psend);
+			ipmr_queue_xmit(net, mrt, true_vif, skb, psend);
 			return;
 		}
 	}
@@ -2152,16 +2233,16 @@ int ip_mr_input(struct sk_buff *skb)
 	/* already under rcu_read_lock() */
 	cache = ipmr_cache_find(mrt, ip_hdr(skb)->saddr, ip_hdr(skb)->daddr);
 	if (!cache) {
-		int vif = ipmr_find_vif(mrt, dev);
+		struct vif_device *vif = ipmr_find_vif(mrt, dev);
 
-		if (vif >= 0)
+		if (vif)
 			cache = ipmr_cache_find_any(mrt, ip_hdr(skb)->daddr,
 						    vif);
 	}
 
 	/* No usable cache entry */
 	if (!cache) {
-		int vif;
+		struct vif_device *vif;
 
 		if (local) {
 			struct sk_buff *skb2 = skb_clone(skb, GFP_ATOMIC);
@@ -2173,7 +2254,7 @@ int ip_mr_input(struct sk_buff *skb)
 
 		read_lock(&mrt_lock);
 		vif = ipmr_find_vif(mrt, dev);
-		if (vif >= 0) {
+		if (vif) {
 			int err2 = ipmr_cache_unresolved(mrt, vif, skb, dev);
 			read_unlock(&mrt_lock);
 
@@ -2240,7 +2321,7 @@ static int pim_rcv(struct sk_buff *skb)
 
 	pim = (struct pimreghdr *)skb_transport_header(skb);
 	if (pim->type != ((PIM_VERSION << 4) | (PIM_TYPE_REGISTER)) ||
-	    (pim->flags & PIM_NULL_REGISTER) ||
+	    (get_unaligned(&pim->flags) & PIM_NULL_REGISTER) ||
 	    (ip_compute_csum((void *)pim, sizeof(*pim)) != 0 &&
 	     csum_fold(skb_checksum(skb, 0, skb->len, 0))))
 		goto drop;
@@ -2271,22 +2352,22 @@ int ipmr_get_route(struct net *net, struct sk_buff *skb,
 	rcu_read_lock();
 	cache = ipmr_cache_find(mrt, saddr, daddr);
 	if (!cache && skb->dev) {
-		int vif = ipmr_find_vif(mrt, skb->dev);
+		struct vif_device *vif = ipmr_find_vif(mrt, skb->dev);
 
-		if (vif >= 0)
+		if (vif)
 			cache = ipmr_cache_find_any(mrt, daddr, vif);
 	}
 	if (!cache) {
 		struct sk_buff *skb2;
 		struct iphdr *iph;
 		struct net_device *dev;
-		int vif = -1;
+		struct vif_device *vif = NULL;
 
 		dev = skb->dev;
 		read_lock(&mrt_lock);
 		if (dev)
 			vif = ipmr_find_vif(mrt, dev);
-		if (vif < 0) {
+		if (vif == NULL) {
 			read_unlock(&mrt_lock);
 			rcu_read_unlock();
 			return -ENODEV;
@@ -2400,8 +2481,7 @@ static void mroute_netlink_event(struct mr_table *mrt, struct mfc_cache *mfc,
 	struct sk_buff *skb;
 	int err = -ENOBUFS;
 
-	skb = nlmsg_new(mroute_msgsize(mfc->_c.mfc_parent >= MAXVIFS,
-				       mrt->maxvif),
+	skb = nlmsg_new(mroute_msgsize(!mfc->_c.mfc_parent, mrt->maxvif),
 			GFP_ATOMIC);
 	if (!skb)
 		goto errout;
@@ -2644,21 +2724,6 @@ static bool ipmr_rtm_validate_proto(unsigned char rtm_protocol)
 	return false;
 }
 
-static int ipmr_nla_get_ttls(const struct nlattr *nla, struct mfcctl *mfcc)
-{
-	struct rtnexthop *rtnh = nla_data(nla);
-	int remaining = nla_len(nla), vifi = 0;
-
-	while (rtnh_ok(rtnh, remaining)) {
-		mfcc->mfcc_ttls[vifi] = rtnh->rtnh_hops;
-		if (++vifi == MAXVIFS)
-			break;
-		rtnh = rtnh_next(rtnh, &remaining);
-	}
-
-	return remaining > 0 ? -EINVAL : vifi;
-}
-
 /* returns < 0 on error, 0 for ADD_MFC and 1 for ADD_MFC_PROXY */
 static int rtm_to_ipmr_mfcc(struct net *net, struct nlmsghdr *nlh,
 			    struct mfcctl *mfcc, int *mrtsock,
@@ -2704,10 +2769,6 @@ static int rtm_to_ipmr_mfcc(struct net *net, struct nlmsghdr *nlh,
 			}
 			break;
 		case RTA_MULTIPATH:
-			if (ipmr_nla_get_ttls(attr, mfcc) < 0) {
-				ret = -EINVAL;
-				goto out;
-			}
 			break;
 		case RTA_PREFSRC:
 			ret = 1;
@@ -2725,7 +2786,7 @@ static int rtm_to_ipmr_mfcc(struct net *net, struct nlmsghdr *nlh,
 	*mrtret = mrt;
 	*mrtsock = rtm->rtm_protocol == RTPROT_MROUTED ? 1 : 0;
 	if (dev)
-		mfcc->mfcc_parent = ipmr_find_vif(mrt, dev);
+		mfcc->mfcc_parent = ipmr_find_vif(mrt, dev)->index;
 
 out:
 	return ret;
@@ -2748,7 +2809,7 @@ static int ipmr_rtm_route(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	parent = ret ? mfcc.mfcc_parent : -1;
 	if (nlh->nlmsg_type == RTM_NEWROUTE)
-		return ipmr_mfc_add(net, tbl, &mfcc, mrtsock, parent);
+		return ipmr_mfc_add(net, tbl, &mfcc, mrtsock, parent, 0);
 	else
 		return ipmr_mfc_delete(tbl, &mfcc, parent);
 }
@@ -2760,7 +2821,7 @@ static bool ipmr_fill_table(struct mr_table *mrt, struct sk_buff *skb)
 	if (nla_put_u32(skb, IPMRA_TABLE_ID, mrt->id) ||
 	    nla_put_u32(skb, IPMRA_TABLE_CACHE_RES_QUEUE_LEN, queue_len) ||
 	    nla_put_s32(skb, IPMRA_TABLE_MROUTE_REG_VIF_NUM,
-			mrt->mroute_reg_vif_num) ||
+			mrt->reg_vif ? mrt->reg_vif->index : -1) ||
 	    nla_put_u8(skb, IPMRA_TABLE_MROUTE_DO_ASSERT,
 		       mrt->mroute_do_assert) ||
 	    nla_put_u8(skb, IPMRA_TABLE_MROUTE_DO_PIM, mrt->mroute_do_pim) ||
@@ -2777,10 +2838,10 @@ static bool ipmr_fill_vif(struct mr_table *mrt, u32 vifid, struct sk_buff *skb)
 	struct vif_device *vif;
 
 	/* if the VIF doesn't exist just continue */
-	if (!VIF_EXISTS(mrt, vifid))
+	vif = vif_find(mrt, vifid);
+	if (!vif)
 		return true;
 
-	vif = &mrt->vif_table[vifid];
 	vif_nest = nla_nest_start_noflag(skb, IPMRA_VIF);
 	if (!vif_nest)
 		return false;
@@ -2940,9 +3001,6 @@ static void ipmr_vif_seq_stop(struct seq_file *seq, void *v)
 
 static int ipmr_vif_seq_show(struct seq_file *seq, void *v)
 {
-	struct mr_vif_iter *iter = seq->private;
-	struct mr_table *mrt = iter->mrt;
-
 	if (v == SEQ_START_TOKEN) {
 		seq_puts(seq,
 			 "Interface      BytesIn  PktsIn  BytesOut PktsOut Flags Local    Remote\n");
@@ -2952,8 +3010,8 @@ static int ipmr_vif_seq_show(struct seq_file *seq, void *v)
 				    vif->dev->name : "none";
 
 		seq_printf(seq,
-			   "%2td %-10s %8ld %7ld  %8ld %7ld %05X %08X %08X\n",
-			   vif - mrt->vif_table,
+			   "%2zd %-10s %8ld %7ld  %8ld %7ld %05X %08X %08X\n",
+			   vif->index,
 			   name, vif->bytes_in, vif->pkt_in,
 			   vif->bytes_out, vif->pkt_out,
 			   vif->flags, vif->local, vif->remote);
@@ -2982,8 +3040,6 @@ static void *ipmr_mfc_seq_start(struct seq_file *seq, loff_t *pos)
 
 static int ipmr_mfc_seq_show(struct seq_file *seq, void *v)
 {
-	int n;
-
 	if (v == SEQ_START_TOKEN) {
 		seq_puts(seq,
 		 "Group    Origin   Iif     Pkts    Bytes    Wrong Oifs\n");
@@ -2995,20 +3051,21 @@ static int ipmr_mfc_seq_show(struct seq_file *seq, void *v)
 		seq_printf(seq, "%08X %08X %-3hd",
 			   (__force u32) mfc->mfc_mcastgrp,
 			   (__force u32) mfc->mfc_origin,
-			   mfc->_c.mfc_parent);
+			   mfc->_c.mfc_parent ? mfc->_c.mfc_parent->index : -1);
 
 		if (it->cache != &mrt->mfc_unres_queue) {
+			int i;
+
 			seq_printf(seq, " %8lu %8lu %8lu",
 				   mfc->_c.mfc_un.res.pkt,
 				   mfc->_c.mfc_un.res.bytes,
 				   mfc->_c.mfc_un.res.wrong_if);
-			for (n = mfc->_c.mfc_un.res.minvif;
-			     n < mfc->_c.mfc_un.res.maxvif; n++) {
-				if (VIF_EXISTS(mrt, n) &&
-				    mfc->_c.mfc_un.res.ttls[n] < 255)
-					seq_printf(seq,
-					   " %2d:%-3d",
-					   n, mfc->_c.mfc_un.res.ttls[n]);
+			for (i = 0; i < mfc->_c.mfc_un.res.output_dev_count; ++i) {
+				struct vif_device *x = mfc->_c.mfc_un.res.output_devs[i];
+				if (x) {
+					seq_printf(seq, " %2d:%-3d",
+						   x->index, x->threshold);
+				}
 			}
 		} else {
 			/* unresolved mfc_caches don't contain
@@ -3099,6 +3156,7 @@ static int __net_init ipmr_net_init(struct net *net)
 			sizeof(struct mr_mfc_iter)))
 		goto proc_cache_fail;
 #endif
+fail:
 	return 0;
 
 #ifdef CONFIG_PROC_FS

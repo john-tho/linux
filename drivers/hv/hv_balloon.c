@@ -1094,6 +1094,7 @@ static unsigned long compute_balloon_floor(void)
 	unsigned long min_pages;
 	unsigned long nr_pages = totalram_pages();
 #define MB2PAGES(mb) ((mb) << (20 - PAGE_SHIFT))
+#if 0
 	/* Simple continuous piecewiese linear function:
 	 *  max MiB -> min MiB  gradient
 	 *       0         0
@@ -1115,6 +1116,8 @@ static unsigned long compute_balloon_floor(void)
 		min_pages = MB2PAGES(232) + (nr_pages >> 4);
 	else
 		min_pages = MB2PAGES(488) + (nr_pages >> 5);
+#endif
+	min_pages = MB2PAGES(32);
 #undef MB2PAGES
 	return min_pages;
 }

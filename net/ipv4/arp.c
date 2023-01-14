@@ -175,9 +175,9 @@ struct neigh_table arp_tbl = {
 		},
 	},
 	.gc_interval	= 30 * HZ,
-	.gc_thresh1	= 128,
-	.gc_thresh2	= 512,
-	.gc_thresh3	= 1024,
+	.gc_thresh1	= 1024,
+	.gc_thresh2	= 4096,
+	.gc_thresh3	= 8192,
 };
 EXPORT_SYMBOL(arp_tbl);
 
@@ -266,13 +266,13 @@ static int arp_constructor(struct neighbour *neigh)
 		if (neigh->type == RTN_MULTICAST) {
 			neigh->nud_state = NUD_NOARP;
 			arp_mc_map(addr, neigh->ha, dev, 1);
-		} else if (dev->flags & (IFF_NOARP | IFF_LOOPBACK)) {
-			neigh->nud_state = NUD_NOARP;
-			memcpy(neigh->ha, dev->dev_addr, dev->addr_len);
 		} else if (neigh->type == RTN_BROADCAST ||
 			   (dev->flags & IFF_POINTOPOINT)) {
 			neigh->nud_state = NUD_NOARP;
 			memcpy(neigh->ha, dev->broadcast, dev->addr_len);
+		} else if (dev->flags&(IFF_NOARP|IFF_NOARP4|IFF_LOOPBACK)) {
+			neigh->nud_state = NUD_NOARP;
+			memcpy(neigh->ha, dev->dev_addr, dev->addr_len);
 		}
 
 		if (dev->header_ops->cache)
@@ -305,7 +305,7 @@ static void arp_send_dst(int type, int ptype, __be32 dest_ip,
 	struct sk_buff *skb;
 
 	/* arp on this interface. */
-	if (dev->flags & IFF_NOARP)
+	if (dev->flags & (IFF_NOARP | IFF_NOARP4))
 		return;
 
 	skb = arp_create(type, ptype, dest_ip, dev, src_ip,
@@ -1110,14 +1110,16 @@ static int arp_req_get(struct arpreq *r, struct net_device *dev)
 	return err;
 }
 
-static int arp_invalidate(struct net_device *dev, __be32 ip)
+static int arp_invalidate(struct net_device *dev, __be32 ip, int skip_perm)
 {
 	struct neighbour *neigh = neigh_lookup(&arp_tbl, &ip, dev);
 	int err = -ENXIO;
 	struct neigh_table *tbl = &arp_tbl;
 
 	if (neigh) {
-		if (neigh->nud_state & ~NUD_NOARP)
+		if ((neigh->nud_state & NUD_PERMANENT) && skip_perm)
+			err = -EEXIST;
+		else if (neigh->nud_state & ~NUD_NOARP)
 			err = neigh_update(neigh, NULL, NUD_FAILED,
 					   NEIGH_UPDATE_F_OVERRIDE|
 					   NEIGH_UPDATE_F_ADMIN, 0);
@@ -1149,6 +1151,7 @@ static int arp_req_delete(struct net *net, struct arpreq *r,
 			  struct net_device *dev)
 {
 	__be32 ip;
+	int skip_perm = (dev == NULL) && (r->arp_flags == ATF_PERM);
 
 	if (r->arp_flags & ATF_PUBL)
 		return arp_req_delete_public(net, r, dev);
@@ -1163,7 +1166,7 @@ static int arp_req_delete(struct net *net, struct arpreq *r,
 		if (!dev)
 			return -EINVAL;
 	}
-	return arp_invalidate(dev, ip);
+	return arp_invalidate(dev, ip, skip_perm);
 }
 
 /*

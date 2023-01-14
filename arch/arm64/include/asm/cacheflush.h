@@ -179,4 +179,9 @@ int set_memory_valid(unsigned long addr, int numpages, int enable);
 int set_direct_map_invalid_noflush(struct page *page);
 int set_direct_map_default_noflush(struct page *page);
 
+static __always_inline void dmac_flush_range(const void *start, const void *end)
+{
+	__dma_flush_area(start, (char *) end - (char *) start);
+}
+
 #endif

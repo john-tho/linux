@@ -54,7 +54,7 @@
  */
 #define TASK_SIZE_32		UL(0x100000000)
 #else
-#define TASK_SIZE_32		(UL(0x100000000) - PAGE_SIZE)
+#define TASK_SIZE_32		(UL(0x080000000) - PAGE_SIZE)
 #endif /* CONFIG_ARM64_64K_PAGES */
 #define TASK_SIZE		(test_thread_flag(TIF_32BIT) ? \
 				TASK_SIZE_32 : TASK_SIZE_64)
@@ -76,7 +76,7 @@
 #endif /* CONFIG_ARM64_FORCE_52BIT */
 
 #ifdef CONFIG_COMPAT
-#define AARCH32_VECTORS_BASE	0xffff0000
+#define AARCH32_VECTORS_BASE	0x7fff0000
 #define STACK_TOP		(test_thread_flag(TIF_32BIT) ? \
 				AARCH32_VECTORS_BASE : STACK_TOP_MAX)
 #else

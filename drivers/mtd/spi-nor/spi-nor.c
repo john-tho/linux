@@ -1298,6 +1298,8 @@ static void spi_nor_set_4byte_opcodes(struct spi_nor *nor)
 	nor->read_opcode = spi_nor_convert_3to4_read(nor->read_opcode);
 	nor->program_opcode = spi_nor_convert_3to4_program(nor->program_opcode);
 	nor->erase_opcode = spi_nor_convert_3to4_erase(nor->erase_opcode);
+	nor->sector_erase_opcode =
+		spi_nor_convert_3to4_erase(nor->sector_erase_opcode);
 
 	if (!spi_nor_has_uniform_erase(nor)) {
 		struct spi_nor_erase_map *map = &nor->params.erase_map;
@@ -1366,7 +1368,7 @@ static u32 spi_nor_convert_addr(struct spi_nor *nor, loff_t addr)
 /*
  * Initiate the erasure of a single sector
  */
-static int spi_nor_erase_sector(struct spi_nor *nor, u32 addr)
+static int spi_nor_erase_sector(struct spi_nor *nor, u32 addr, u8 erase_opcode)
 {
 	int i;
 
@@ -1374,7 +1376,7 @@ static int spi_nor_erase_sector(struct spi_nor *nor, u32 addr)
 
 	if (nor->spimem) {
 		struct spi_mem_op op =
-			SPI_MEM_OP(SPI_MEM_OP_CMD(nor->erase_opcode, 1),
+			SPI_MEM_OP(SPI_MEM_OP_CMD(erase_opcode, 1),
 				   SPI_MEM_OP_ADDR(nor->addr_width, addr, 1),
 				   SPI_MEM_OP_NO_DUMMY,
 				   SPI_MEM_OP_NO_DATA);
@@ -1393,7 +1395,7 @@ static int spi_nor_erase_sector(struct spi_nor *nor, u32 addr)
 		addr >>= 8;
 	}
 
-	return nor->controller_ops->write_reg(nor, nor->erase_opcode,
+	return nor->controller_ops->write_reg(nor, erase_opcode,
 					      nor->bouncebuf, nor->addr_width);
 }
 
@@ -1648,7 +1650,8 @@ static int spi_nor_erase_multi_sectors(struct spi_nor *nor, u64 addr, u32 len)
 			if (ret)
 				goto destroy_erase_cmd_list;
 
-			ret = spi_nor_erase_sector(nor, addr);
+			ret = spi_nor_erase_sector(nor, addr,
+						   nor->erase_opcode);
 			if (ret)
 				goto destroy_erase_cmd_list;
 
@@ -1730,16 +1733,26 @@ static int spi_nor_erase(struct mtd_info *mtd, struct erase_info *instr)
 	/* "sector"-at-a-time erase */
 	} else if (spi_nor_has_uniform_erase(nor)) {
 		while (len) {
+			u8 erase_opcode = nor->erase_opcode;
+			u32 erase_size = mtd->erasesize;
+
+			if (nor->sector_erase_opcode
+			    && len >= nor->info->sector_size
+			    && (addr & (nor->info->sector_size - 1)) == 0) {
+				erase_size = nor->info->sector_size;
+				erase_opcode = nor->sector_erase_opcode;
+			}
+
 			ret = spi_nor_write_enable(nor);
 			if (ret)
 				goto erase_err;
 
-			ret = spi_nor_erase_sector(nor, addr);
+			ret = spi_nor_erase_sector(nor, addr, erase_opcode);
 			if (ret)
 				goto erase_err;
 
-			addr += mtd->erasesize;
-			len -= mtd->erasesize;
+			addr += erase_size;
+			len -= erase_size;
 
 			ret = spi_nor_wait_till_ready(nor);
 			if (ret)
@@ -2316,6 +2329,12 @@ static struct spi_nor_fixups gd25q256_fixups = {
  * old entries may be missing 4K flag.
  */
 static const struct flash_info spi_nor_ids[] = {
+	/* spi_flash_jedec_detection --
+	 *   using this configuration means the user is counting on this driver
+	 *   to perform memory device detection automatically (using jedec
+	 *   probe).
+	 */
+	{ "spi_flash_jedec_detection", INFO(0xD373C7, 0, 0, 0, 0) },
 	/* Atmel -- some are (confusingly) marketed as "DataFlash" */
 	{ "at25fs010",  INFO(0x1f6601, 0, 32 * 1024,   4, SECT_4K) },
 	{ "at25fs040",  INFO(0x1f6604, 0, 64 * 1024,   8, SECT_4K) },
@@ -2332,6 +2351,7 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "at26df081a", INFO(0x1f4501, 0, 64 * 1024, 16, SECT_4K) },
 	{ "at26df161a", INFO(0x1f4601, 0, 64 * 1024, 32, SECT_4K) },
 	{ "at26df321",  INFO(0x1f4700, 0, 64 * 1024, 64, SECT_4K) },
+	{ "at25df512c", INFO(0x1f6501, 0, 32 * 1024,  2, SECT_4K) },
 
 	{ "at45db081d", INFO(0x1f2500, 0, 64 * 1024, 16, SECT_4K) },
 
@@ -2348,7 +2368,7 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "en25qh32",   INFO(0x1c7016, 0, 64 * 1024,   64, 0) },
 	{ "en25qh64",   INFO(0x1c7017, 0, 64 * 1024,  128,
 			SECT_4K | SPI_NOR_DUAL_READ) },
-	{ "en25qh128",  INFO(0x1c7018, 0, 64 * 1024,  256, 0) },
+	{ "en25qh128",  INFO(0x1c7018, 0, 64 * 1024,  256, SECT_4K) },
 	{ "en25qh256",  INFO(0x1c7019, 0, 64 * 1024,  512, 0) },
 	{ "en25s64",	INFO(0x1c3817, 0, 64 * 1024,  128, SECT_4K) },
 
@@ -2415,6 +2435,11 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "320s33b",  INFO(0x898912, 0, 64 * 1024,  64, 0) },
 	{ "640s33b",  INFO(0x898913, 0, 64 * 1024, 128, 0) },
 
+	/* ISSI - 4k erase works, but is slower than 64k erase */
+	{ "is25lp128", INFO(0x9d6018, 0, 64 * 1024, 256, SECT_4K) },
+	{ "is25lp256d", INFO(0x9d6019, 0, 64 * 1024, 512,
+			     SECT_4K | SPI_NOR_4B_OPCODES) },
+
 	/* ISSI */
 	{ "is25cd512",  INFO(0x7f9d20, 0, 32 * 1024,   2, SECT_4K) },
 	{ "is25lq040b", INFO(0x9d4013, 0, 64 * 1024,   8,
@@ -2446,12 +2471,14 @@ static const struct flash_info spi_nor_ids[] = {
 
 	/* Macronix */
 	{ "mx25l512e",   INFO(0xc22010, 0, 64 * 1024,   1, SECT_4K) },
+	{ "mx25r512f",   INFO(0xc22810, 0, 64 * 1024,   1, SECT_4K) },
 	{ "mx25l2005a",  INFO(0xc22012, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25l4005a",  INFO(0xc22013, 0, 64 * 1024,   8, SECT_4K) },
 	{ "mx25l8005",   INFO(0xc22014, 0, 64 * 1024,  16, 0) },
 	{ "mx25l1606e",  INFO(0xc22015, 0, 64 * 1024,  32, SECT_4K) },
 	{ "mx25l3205d",  INFO(0xc22016, 0, 64 * 1024,  64, SECT_4K) },
 	{ "mx25l3255e",  INFO(0xc29e16, 0, 64 * 1024,  64, SECT_4K) },
+	{ "mx25u12835f", INFO(0xc22538, 0, 64 * 1024, 256, 0) },
 	{ "mx25l6405d",  INFO(0xc22017, 0, 64 * 1024, 128, SECT_4K) },
 	{ "mx25u2033e",  INFO(0xc22532, 0, 64 * 1024,   4, SECT_4K) },
 	{ "mx25u3235f",	 INFO(0xc22536, 0, 64 * 1024,  64,
@@ -2459,7 +2486,7 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "mx25u4035",   INFO(0xc22533, 0, 64 * 1024,   8, SECT_4K) },
 	{ "mx25u8035",   INFO(0xc22534, 0, 64 * 1024,  16, SECT_4K) },
 	{ "mx25u6435f",  INFO(0xc22537, 0, 64 * 1024, 128, SECT_4K) },
-	{ "mx25l12805d", INFO(0xc22018, 0, 64 * 1024, 256, 0) },
+	{ "mx25l12805d", INFO(0xc22018, 0, 64 * 1024, 256, SECT_4K) },
 	{ "mx25l12855e", INFO(0xc22618, 0, 64 * 1024, 256, 0) },
 	{ "mx25r3235f",  INFO(0xc22816, 0, 64 * 1024,  64,
 			 SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
@@ -2507,8 +2534,10 @@ static const struct flash_info spi_nor_ids[] = {
 			       SPI_NOR_QUAD_READ | SPI_NOR_4B_OPCODES) },
 	{ "n25q512a",    INFO(0x20bb20, 0, 64 * 1024, 1024, SECT_4K |
 			      USE_FSR | SPI_NOR_QUAD_READ) },
-	{ "n25q00",      INFO(0x20ba21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
+	{ "n25q00",      INFO(0x20ba21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE | SPI_NOR_4B_OPCODES) },
 	{ "n25q00a",     INFO(0x20bb21, 0, 64 * 1024, 2048, SECT_4K | USE_FSR | SPI_NOR_QUAD_READ | NO_CHIP_ERASE) },
+	{ "mt25ql256a", INFO(0x20ba19,  0, 64 * 1024,  512, SECT_4K | SPI_NOR_4B_OPCODES) },
+	{ "mt25ql01gb", INFO(0x20ba21,  0, 64 * 1024, 2048, SECT_4K | SPI_NOR_4B_OPCODES) },
 	{ "mt25ql02g",   INFO(0x20ba22, 0, 64 * 1024, 4096,
 			      SECT_4K | USE_FSR | SPI_NOR_QUAD_READ |
 			      NO_CHIP_ERASE) },
@@ -2538,6 +2567,7 @@ static const struct flash_info spi_nor_ids[] = {
 			SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | USE_CLSR) },
 	{ "s25fl128s1", INFO6(0x012018, 0x4d0180, 64 * 1024, 256,
 			SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | USE_CLSR) },
+	{ "s25fl128l",	INFO(0x016018,	    0, 64 * 1024, 256, SECT_4K) },
 	{ "s25fl256s0", INFO(0x010219, 0x4d00, 256 * 1024, 128, USE_CLSR) },
 	{ "s25fl256s1", INFO(0x010219, 0x4d01,  64 * 1024, 512, SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ | USE_CLSR) },
 	{ "s25fl512s",  INFO6(0x010220, 0x4d0080, 256 * 1024, 256,
@@ -2552,12 +2582,13 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "s25sl004a",  INFO(0x010212,      0,  64 * 1024,   8, 0) },
 	{ "s25sl008a",  INFO(0x010213,      0,  64 * 1024,  16, 0) },
 	{ "s25sl016a",  INFO(0x010214,      0,  64 * 1024,  32, 0) },
+	{ "s25sl016k",  INFO(0x014015,      0,  64 * 1024,  32, 0) },
 	{ "s25sl032a",  INFO(0x010215,      0,  64 * 1024,  64, 0) },
 	{ "s25sl064a",  INFO(0x010216,      0,  64 * 1024, 128, 0) },
 	{ "s25fl004k",  INFO(0xef4013,      0,  64 * 1024,   8, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "s25fl008k",  INFO(0xef4014,      0,  64 * 1024,  16, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "s25fl016k",  INFO(0xef4015,      0,  64 * 1024,  32, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
-	{ "s25fl064k",  INFO(0xef4017,      0,  64 * 1024, 128, SECT_4K) },
+//	{ "s25fl064k",  INFO(0xef4017,      0,  64 * 1024, 128, SECT_4K) },
 	{ "s25fl116k",  INFO(0x014015,      0,  64 * 1024,  32, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "s25fl132k",  INFO(0x014016,      0,  64 * 1024,  64, SECT_4K) },
 	{ "s25fl164k",  INFO(0x014017,      0,  64 * 1024, 128, SECT_4K) },
@@ -2640,6 +2671,7 @@ static const struct flash_info spi_nor_ids[] = {
 			SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB)
 	},
+	{ "w25q10ew", INFO(0xef6011, 0, 64 * 1024, 128, SECT_4K) },
 	{ "w25q20cl", INFO(0xef4012, 0, 64 * 1024,  4, SECT_4K) },
 	{ "w25q20bw", INFO(0xef5012, 0, 64 * 1024,  4, SECT_4K) },
 	{ "w25q20ew", INFO(0xef6012, 0, 64 * 1024,  4, SECT_4K) },
@@ -2680,6 +2712,13 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "w25q80bl", INFO(0xef4014, 0, 64 * 1024,  16, SECT_4K) },
 	{ "w25q128", INFO(0xef4018, 0, 64 * 1024, 256, SECT_4K) },
 	{ "w25q256", INFO(0xef4019, 0, 64 * 1024, 512,
+			  SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
+	{ "w25q256jw", INFO(0xef8019, 0, 64 * 1024, 512,
+			    SECT_4K | SPI_NOR_4B_OPCODES) },
+	{ "w25q01jv", INFO(0xef7021, 0,  64 * 1024, 2048,
+			    SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			    SPI_NOR_4B_OPCODES) },
+	{ "w25q512jv", INFO(0xef7020, 0, 64 * 1024, 1024,
 			  SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
 			  SPI_NOR_4B_OPCODES) },
 	{ "w25q256jvm", INFO(0xef7019, 0, 64 * 1024, 512,
@@ -2688,6 +2727,8 @@ static const struct flash_info spi_nor_ids[] = {
 			     SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ) },
 	{ "w25m512jv", INFO(0xef7119, 0, 64 * 1024, 1024,
 			SECT_4K | SPI_NOR_QUAD_READ | SPI_NOR_DUAL_READ) },
+	{ "w25q16", INFO(0xef7015, 0, 64 * 1024,  32, SECT_4K) },
+	{ "w25q80ew", INFO(0xef6014, 0, 64 * 1024,  16, SECT_4K) },
 
 	/* Catalyst / On Semiconductor -- non-JEDEC */
 	{ "cat25c11", CAT25_INFO(  16, 8, 16, 1, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
@@ -2695,6 +2736,13 @@ static const struct flash_info spi_nor_ids[] = {
 	{ "cat25c09", CAT25_INFO( 128, 8, 32, 2, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
 	{ "cat25c17", CAT25_INFO( 256, 8, 32, 2, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
 	{ "cat25128", CAT25_INFO(2048, 8, 64, 2, SPI_NOR_NO_ERASE | SPI_NOR_NO_FR) },
+
+	/* GigaDevice */
+	{ "gd25q16c", INFO(0xc84015, 0, 64 * 1024, 32, SECT_4K) },
+	{ "gd25q40c", INFO(0xc84013, 0, 64 * 1024, 8,  SECT_4K) },
+	{ "gd25lq80c", INFO(0xc86014, 0, 64 * 1024, 16, SECT_4K)},
+	{ "gd25q127c", INFO(0xc84018, 0, 64 * 1024, 256, SECT_4K) },
+	{ "gd25ld10c", INFO(0xc86011, 0, 64 * 1024, 128, SECT_4K) },
 
 	/* Xilinx S3AN Internal Flash */
 	{ "3S50AN", S3AN_INFO(0x1f2200, 64, 264) },
@@ -2931,6 +2979,66 @@ static int spi_nor_write(struct mtd_info *mtd, loff_t to, size_t len,
 write_err:
 	spi_nor_unlock_and_unprep(nor);
 	return ret;
+}
+
+static int spi_nor_chunked_write(struct mtd_info *mtd, loff_t _to, size_t _len,
+				 size_t *_retlen, const u_char *_buf)
+{
+	struct spi_nor *nor = mtd_to_spi_nor(mtd);
+	int chunk_size;
+	size_t retlen = 0;
+	int ret;
+
+	chunk_size = nor->chunk_size;
+	if (!chunk_size)
+		chunk_size = _len;
+
+	if (nor->addr_width > 3)
+		chunk_size -= nor->addr_width - 3;
+
+	while (retlen < _len) {
+		size_t len = min_t(int, chunk_size, _len - retlen);
+		const u_char *buf = _buf + retlen;
+		loff_t to = _to + retlen;
+
+		if (nor->flags & SNOR_F_SST)
+			ret = sst_write(mtd, to, len, &retlen, buf);
+		else
+			ret = spi_nor_write(mtd, to, len, &retlen, buf);
+		if (ret)
+			return ret;
+	}
+
+	*_retlen += retlen;
+	return 0;
+}
+
+static int spi_nor_chunked_read(struct mtd_info *mtd, loff_t _from, size_t _len,
+				size_t *_retlen, u_char *_buf)
+{
+	struct spi_nor *nor = mtd_to_spi_nor(mtd);
+	int chunk_size;
+	int ret;
+
+	chunk_size = nor->chunk_size;
+	if (!chunk_size)
+		chunk_size = _len;
+
+	*_retlen = 0;
+	while (*_retlen < _len) {
+		size_t len = min_t(int, chunk_size, _len - *_retlen);
+		u_char *buf = _buf + *_retlen;
+		loff_t from = _from + *_retlen;
+		size_t retlen = 0;
+
+		ret = spi_nor_read(mtd, from, len, &retlen, buf);
+		if (ret)
+			return ret;
+
+		*_retlen += retlen;
+	}
+
+	return 0;
 }
 
 static int spi_nor_check(struct spi_nor *nor)
@@ -4463,7 +4571,8 @@ static int spi_nor_select_pp(struct spi_nor *nor,
  */
 static const struct spi_nor_erase_type *
 spi_nor_select_uniform_erase(struct spi_nor_erase_map *map,
-			     const u32 wanted_size)
+			     const u32 wanted_size,
+			     bool fetch_exact_match)
 {
 	const struct spi_nor_erase_type *tested_erase, *erase = NULL;
 	int i;
@@ -4496,6 +4605,9 @@ spi_nor_select_uniform_erase(struct spi_nor_erase_map *map,
 	if (!erase)
 		return NULL;
 
+	if (fetch_exact_match)
+		return erase->size == wanted_size ? erase : NULL;
+
 	/* Disable all other Sector Erase commands. */
 	map->uniform_erase_type &= ~SNOR_ERASE_TYPE_MASK;
 	map->uniform_erase_type |= BIT(erase - map->erase_type);
@@ -4524,11 +4636,16 @@ static int spi_nor_select_erase(struct spi_nor *nor)
 #endif
 
 	if (spi_nor_has_uniform_erase(nor)) {
-		erase = spi_nor_select_uniform_erase(map, wanted_size);
+		const struct spi_nor_erase_type *sect_erase =
+			spi_nor_select_uniform_erase(map,
+						     nor->info->sector_size, 1);
+		erase = spi_nor_select_uniform_erase(map, wanted_size, 0);
 		if (!erase)
 			return -EINVAL;
 		nor->erase_opcode = erase->opcode;
 		mtd->erasesize = erase->size;
+		if (erase->size < nor->info->sector_size && sect_erase)
+			nor->sector_erase_opcode = sect_erase->opcode;
 		return 0;
 	}
 
@@ -5119,6 +5236,7 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	struct mtd_info *mtd = &nor->mtd;
 	struct device_node *np = spi_nor_get_flash_node(nor);
 	struct spi_nor_flash_parameter *params = &nor->params;
+	unsigned val;
 	int ret;
 	int i;
 
@@ -5187,10 +5305,12 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	}
 
 	/* sst nor chips use AAI word program */
-	if (info->flags & SST_WRITE)
+	if (info->flags & SST_WRITE) {
 		mtd->_write = sst_write;
-	else
+		nor->flags |= SNOR_F_SST;
+	} else {
 		mtd->_write = spi_nor_write;
+	}
 
 	if (info->flags & USE_FSR)
 		nor->flags |= SNOR_F_USE_FSR;
@@ -5212,6 +5332,12 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 	nor->page_size = params->page_size;
 	mtd->writebufsize = nor->page_size;
 
+	if (!of_property_read_u32(np, "m25p,chunked-io", &val)) {
+		dev_info(dev, "using chunked io (size=%d)\n", val);
+		mtd->_read = spi_nor_chunked_read;
+		mtd->_write = spi_nor_chunked_write;
+		nor->chunk_size = val;
+	}
 	if (of_property_read_bool(np, "broken-flash-reset"))
 		nor->flags |= SNOR_F_BROKEN_RESET;
 
@@ -5260,6 +5386,37 @@ int spi_nor_scan(struct spi_nor *nor, const char *name,
 }
 EXPORT_SYMBOL_GPL(spi_nor_scan);
 
+static int spi_nor_read_fact(struct mtd_info *mtd, loff_t from, size_t len,
+			     size_t *retlen, u_char *buf)
+{
+	struct spi_nor *nor = mtd->priv;
+	int ret;
+
+	mutex_lock(&nor->lock);
+
+        if (from == 0) {
+                /* return nand id */
+		u8 code = SPINOR_OP_RDID;
+		ret = spi_write_then_read(nor->spimem->spi, &code, 1, buf, len);
+        }
+        else if ((from > 0 && from <= 4) && len <= 32) {
+                /* custom read command */
+		char tx[4];
+		memcpy(tx, buf, from);
+		memset(buf, 0, len);
+		ret = spi_write_then_read(nor->spimem->spi, tx, from, buf, len);
+        } else {
+		printk("spi_nor_read_fact ERROR: from (%d) > 4"
+		       " or rx len (%d) > 32\n",
+                       (int)from, (int)len);
+                ret = -EINVAL;
+        }
+
+	mutex_unlock(&nor->lock);
+	*retlen = len;
+	return ret;
+}
+
 static int spi_nor_probe(struct spi_mem *spimem)
 {
 	struct spi_device *spi = spimem->spi;
@@ -5305,6 +5462,8 @@ static int spi_nor_probe(struct spi_mem *spimem)
 	ret = spi_nor_scan(nor, flash_name, &hwcaps);
 	if (ret)
 		return ret;
+
+	nor->mtd._read_fact_prot_reg = spi_nor_read_fact;
 
 	/*
 	 * None of the existing parts have > 512B pages, but let's play safe
@@ -5355,6 +5514,7 @@ static void spi_nor_shutdown(struct spi_mem *spimem)
  * keep them available as module aliases for existing platforms.
  */
 static const struct spi_device_id spi_nor_dev_ids[] = {
+	{"spi_flash_jedec_detection"},
 	/*
 	 * Allow non-DT platform devices to bind to the "spi-nor" modalias, and
 	 * hack around the fact that the SPI core does not provide uevent

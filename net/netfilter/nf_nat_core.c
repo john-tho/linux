@@ -624,7 +624,12 @@ nf_nat_setup_info(struct nf_conn *ct,
 
 	get_unique_tuple(&new_tuple, &curr_tuple, range, ct, maniptype);
 
-	if (!nf_ct_tuple_equal(&new_tuple, &curr_tuple)) {
+	/* MT: If SNAT address is explicitly set (NF_NAT_RANGE_FORCE_IPS),
+	 * then create the NAT entry even if it seems that NAT is not required,
+	 * i.e., when the reply tuple matches the inverse of the original one.
+	 */
+	if (!nf_ct_tuple_equal(&new_tuple, &curr_tuple)
+			|| (range->flags & NF_NAT_RANGE_FORCE_IPS)) {
 		struct nf_conntrack_tuple reply;
 
 		/* Alter conntrack table so will recognize replies. */
@@ -908,7 +913,7 @@ static int nf_nat_ipv4_nlattr_to_range(struct nlattr *tb[],
 {
 	if (tb[CTA_NAT_V4_MINIP]) {
 		range->min_addr.ip = nla_get_be32(tb[CTA_NAT_V4_MINIP]);
-		range->flags |= NF_NAT_RANGE_MAP_IPS;
+		range->flags |= NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_FORCE_IPS;
 	}
 
 	if (tb[CTA_NAT_V4_MAXIP])
@@ -925,7 +930,7 @@ static int nf_nat_ipv6_nlattr_to_range(struct nlattr *tb[],
 	if (tb[CTA_NAT_V6_MINIP]) {
 		nla_memcpy(&range->min_addr.ip6, tb[CTA_NAT_V6_MINIP],
 			   sizeof(struct in6_addr));
-		range->flags |= NF_NAT_RANGE_MAP_IPS;
+		range->flags |= NF_NAT_RANGE_MAP_IPS | NF_NAT_RANGE_FORCE_IPS;
 	}
 
 	if (tb[CTA_NAT_V6_MAXIP])

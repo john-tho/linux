@@ -1,0 +1,40 @@
+#
+# yaffs file system configurations
+#
+
+config YAFFS_FS
+	tristate "yaffs2 file system support"
+	default n
+	depends on MTD_BLOCK
+	select YAFFS_YAFFS1
+	select YAFFS_YAFFS2
+	help
+	  yaffs2, or Yet Another Flash File System, is a file system
+	  optimised for NAND Flash chips.
+
+	  To compile the yaffs2 file system support as a module, choose M
+	  here: the module will be called yaffs2.
+
+	  If unsure, say N.
+
+	  Further information on yaffs2 is available at
+	  <http://www.aleph1.co.uk/yaffs/>.
+
+config YAFFS_DISABLE_BAD_BLOCK_MARKING
+	bool "Disable yaffs2 bad block marking"
+	depends on YAFFS_FS
+	default n
+	help
+	 Useful during early flash bring up to prevent problems causing
+	 lots of bad block marking.
+
+	 If unsure, say N.
+
+config YAFFS_ENABLE_COMPATIBILITY_MODE
+	bool "Enable compatibility mode with old yaffs2 version"
+	depends on YAFFS_FS
+	default n
+	help
+	 Allows downgrade/upgrade between old yaffs2 version.
+
+	 If unsure, say Y.

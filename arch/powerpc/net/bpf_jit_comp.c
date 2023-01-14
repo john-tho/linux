@@ -678,7 +678,7 @@ out:
 void bpf_jit_free(struct bpf_prog *fp)
 {
 	if (fp->jited)
-		module_memfree(fp->bpf_func);
+		module_memfree(fp->bpf_func, 0);
 
 	bpf_prog_unlock_free(fp);
 }

@@ -1135,7 +1135,7 @@ void __init setup_arch(char **cmdline_p)
 	if (mdesc->restart)
 		arm_pm_restart = mdesc->restart;
 
-	unflatten_device_tree();
+	unflatten_and_copy_device_tree();
 
 	arm_dt_init_cpu_maps();
 	psci_dt_init();
@@ -1265,6 +1265,11 @@ static int c_show(struct seq_file *m, void *v)
 		for (j = 0; hwcap_str[j]; j++)
 			if (elf_hwcap & (1 << j))
 				seq_printf(m, "%s ", hwcap_str[j]);
+		/* dump out the processor features */
+		if (of_machine_is_compatible("annapurna-labs,alpine2")) {
+		    seq_printf(m, "cpu MHz\t\t: 2125\n");
+		}
+		seq_puts(m, "Features\t: ");
 
 		for (j = 0; hwcap2_str[j]; j++)
 			if (elf_hwcap2 & (1 << j))

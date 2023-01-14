@@ -67,12 +67,12 @@ struct tcp_fastopen_cookie {
 struct tcp_sack_block_wire {
 	__be32	start_seq;
 	__be32	end_seq;
-};
+} __attribute__((packed));
 
 struct tcp_sack_block {
 	u32	start_seq;
 	u32	end_seq;
-};
+} __attribute__((packed));
 
 /*These are used to set the sack_ok field in struct tcp_options_received */
 #define TCP_SACK_SEEN     (1 << 0)   /*1 = peer is SACK capable, */
@@ -474,6 +474,9 @@ struct tcp_timewait_sock {
 	struct tcp_md5sig_key	  *tw_md5_key;
 #endif
 };
+
+int tcp_skb_shift(struct sk_buff *to, struct sk_buff *from, int pcount,
+		  int shiftlen);
 
 static inline struct tcp_timewait_sock *tcp_twsk(const struct sock *sk)
 {

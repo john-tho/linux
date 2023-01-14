@@ -3292,6 +3292,11 @@ again:
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
 
+#ifdef CONFIG_HOMECACHE
+		/* Must call before entering atomic region. */
+		homecache_make_writable(page, 0);
+#endif
+
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
 		flush_dcache_page(page);
 

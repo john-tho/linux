@@ -914,6 +914,48 @@ static void dwc3_set_incr_burst_type(struct dwc3 *dwc)
 }
 
 /**
+ * dwc3_ref_clk_adjustment - Reference clock settings for SOF and ITP
+ *		Default reference clock configurations are calculated assuming
+ *		19.2 MHz clock source. For other clock source, this will set
+ *		configuration in DWC3_GFLADJ register
+ * @dwc: Pointer to our controller context structure
+ * @ref_clk_adj: Value of reference clock settings
+ */
+static void dwc3_ref_clk_adjustment(struct dwc3 *dwc, u32 ref_clk_adj)
+{
+	u32 reg;
+
+	if (ref_clk_adj == 0)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GFLADJ);
+	reg &= ~0xffffff00;
+	reg |=  (ref_clk_adj << 8);
+	dwc3_writel(dwc->regs, DWC3_GFLADJ, reg);
+}
+
+/**
+ * dwc3_ref_clk_period - Reference clock period configuration
+ *		Default reference clock period is calculated assuming
+ *		19.2 MHz as clock source. For other clock source, this
+ *		will set clock period in DWC3_GUCTL register
+ * @dwc: Pointer to our controller context structure
+ * @ref_clk_per: reference clock period in ns
+ */
+static void dwc3_ref_clk_period(struct dwc3 *dwc, u32 ref_clk_per)
+{
+	u32 reg;
+
+	if (ref_clk_per == 0)
+		return;
+
+	reg = dwc3_readl(dwc->regs, DWC3_GUCTL);
+	reg &= ~0xffc00000;
+	reg |=  (ref_clk_per << 22);
+	dwc3_writel(dwc->regs, DWC3_GUCTL, reg);
+}
+
+/**
  * dwc3_core_init - Low-level initialization of DWC3 Core
  * @dwc: Pointer to our controller context structure
  *
@@ -924,6 +966,8 @@ static int dwc3_core_init(struct dwc3 *dwc)
 	unsigned int		hw_mode;
 	u32			reg;
 	int			ret;
+	u32 ref_clk_adj = 0;
+	u32 ref_clk_per = 0;
 
 	hw_mode = DWC3_GHWPARAMS0_MODE(dwc->hwparams.hwparams0);
 
@@ -984,8 +1028,22 @@ static int dwc3_core_init(struct dwc3 *dwc)
 	if (ret)
 		goto err1;
 
+	if (dwc->disable_ep_cache_eviction_quirk) {
+		reg = dwc3_readl(dwc->regs, DWC3_GUCTL2);
+		reg |= 1 << 12;
+		dwc3_writel(dwc->regs, DWC3_GUCTL2, reg);
+	}
+
 	/* Adjust Frame Length */
 	dwc3_frame_length_adjustment(dwc);
+
+	device_property_read_u32(dwc->dev, "snps,quirk-ref-clock-adjustment", &ref_clk_adj);
+	device_property_read_u32(dwc->dev, "snps,quirk-ref-clock-period", &ref_clk_per);
+
+	/* Adjust Reference Clock Settings */
+	dwc3_ref_clk_adjustment(dwc, ref_clk_adj);
+	/* Adjust Reference Clock Period */
+	dwc3_ref_clk_period(dwc, ref_clk_per);
 
 	dwc3_set_incr_burst_type(dwc);
 
@@ -1354,6 +1412,9 @@ static void dwc3_get_properties(struct dwc3 *dwc)
 
 	dwc->dis_metastability_quirk = device_property_read_bool(dev,
 				"snps,dis_metastability_quirk");
+
+	dwc->disable_ep_cache_eviction_quirk = device_property_read_bool(dev,
+				"snps,dis_ep_cache_eviction");
 
 	dwc->lpm_nyet_threshold = lpm_nyet_threshold;
 	dwc->tx_de_emphasis = tx_de_emphasis;

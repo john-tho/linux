@@ -1,0 +1,95 @@
+/dts-v1/;
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "D53GR_5HacD2HnD";
+
+	leds {
+		compatible = "leds-rb";
+		led1 {
+			gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
+		};
+		led2 {
+			gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
+		};
+		led3 {
+			gpios = <&gpio1 5 GPIO_ACTIVE_LOW>;
+		};
+		led4 {
+			gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
+		};
+		led5 {
+			gpios = <&gpio1 3 GPIO_ACTIVE_LOW>;
+		};
+		user-led {
+			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		};
+		power-led {
+			gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		button {
+			gpios = <&tlmm 63 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		mode-button {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		usb-power-off {
+			gpios = <&tlmm 2 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+&tlmm {
+	gpio_spi_pin: gpio_spi_pin_pinmux {
+		mux {
+			pins = "gpio58";
+			function = "gpio";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&spi_0 {
+	num-cs = <2>;
+	cs-gpios = <0>, <&tlmm 58 GPIO_ACTIVE_LOW>;
+
+	gpio1: gpio-spi@1 {
+		pinctrl-0 = <&gpio_spi_pin>;
+		pinctrl-names = "default";
+		compatible = "gpio-spi";
+		gpio-controller;
+		#gpio-cells = <2>;
+		nr-gpo = <8>;
+		nr-gpi = <0>;
+		spi-max-frequency = <25000000>;
+		reg = <1>;
+	};
+};
+
+&edma {
+	port_map = <4 3 2 1 0(-1)>;
+};
+
+&usb2 {
+	status = "ok";
+};
+
+&usb2_hs_phy {
+	status = "ok";
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&usb3_ss_phy {
+	status = "ok";
+};
+
+&usb3_hs_phy {
+	status = "ok";
+};

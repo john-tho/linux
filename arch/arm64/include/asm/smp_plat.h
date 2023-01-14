@@ -25,6 +25,8 @@ static inline u32 mpidr_hash_size(void)
 	return 1 << mpidr_hash.bits;
 }
 
+extern void secondary_startup(void);
+
 /*
  * Retrieve logical cpu index corresponding to a given MPIDR.Aff*
  *  - mpidr: MPIDR.Aff* bits to be used for the look-up

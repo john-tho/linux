@@ -1,0 +1,15 @@
+#
+# Mikrotik boards
+#
+platform-$(CONFIG_MIPS_MIKROTIK) += rb/
+platform-$(CONFIG_MIPS_MIKROTIK) += rb/rb400/
+platform-$(CONFIG_MIPS_MIKROTIK) += rb/ralink/
+platform-$(CONFIG_MIPS_MIKROTIK) += rb/vm/
+cflags-$(CONFIG_MIPS_MIKROTIK) += -I$(srctree)/arch/mips/include/asm/mach-rb
+ifdef CONFIG_MAPPED_KERNEL
+load-$(CONFIG_MIPS_MIKROTIK) += 0xffffffffc0011000
+OBJCOPYFLAGS += --change-addresses=0xc0000000
+else
+load-$(CONFIG_MIPS_MIKROTIK) += 0xffffffff80011000
+endif
+

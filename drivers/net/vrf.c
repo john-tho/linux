@@ -37,7 +37,7 @@
 #define DRV_NAME	"vrf"
 #define DRV_VERSION	"1.0"
 
-#define FIB_RULE_PREF  1000       /* default preference for FIB rules */
+#define FIB_RULE_PREF  0x7FFF1000       /* default preference for FIB rules */
 
 static unsigned int vrf_net_id;
 
@@ -1146,7 +1146,7 @@ static inline size_t vrf_fib_rule_nl_size(void)
 	return sz;
 }
 
-static int vrf_fib_rule(const struct net_device *dev, __u8 family, bool add_it)
+static int vrf_fib_rule(const struct net_device *dev, __u8 family, bool add_it, unsigned prio, bool unreach)
 {
 	struct fib_rule_hdr *frh;
 	struct nlmsghdr *nlh;
@@ -1171,7 +1171,7 @@ static int vrf_fib_rule(const struct net_device *dev, __u8 family, bool add_it)
 	frh = nlmsg_data(nlh);
 	memset(frh, 0, sizeof(*frh));
 	frh->family = family;
-	frh->action = FR_ACT_TO_TBL;
+	frh->action = unreach ? FR_ACT_UNREACHABLE : FR_ACT_TO_TBL;
 
 	if (nla_put_u8(skb, FRA_PROTOCOL, RTPROT_KERNEL))
 		goto nla_put_failure;
@@ -1179,7 +1179,7 @@ static int vrf_fib_rule(const struct net_device *dev, __u8 family, bool add_it)
 	if (nla_put_u8(skb, FRA_L3MDEV, 1))
 		goto nla_put_failure;
 
-	if (nla_put_u32(skb, FRA_PRIORITY, FIB_RULE_PREF))
+	if (nla_put_u32(skb, FRA_PRIORITY, prio))
 		goto nla_put_failure;
 
 	nlmsg_end(skb, nlh);
@@ -1209,22 +1209,24 @@ static int vrf_add_fib_rules(const struct net_device *dev)
 {
 	int err;
 
-	err = vrf_fib_rule(dev, AF_INET,  true);
-	if (err < 0)
-		goto out_err;
+	err = vrf_fib_rule(dev, AF_INET,  true, 100, false);
+	if (err < 0) goto out_err;
+	err = vrf_fib_rule(dev, AF_INET,  true, 101, true);
+	if (err < 0) goto out_err2;
 
-	err = vrf_fib_rule(dev, AF_INET6, true);
-	if (err < 0)
-		goto ipv6_err;
+	err = vrf_fib_rule(dev, AF_INET6, true, 100, false);
+	if (err < 0) goto ipv6_err;
+	err = vrf_fib_rule(dev, AF_INET6, true, 101, true);
+	if (err < 0) goto ipv6_err2;
 
 #if IS_ENABLED(CONFIG_IP_MROUTE_MULTIPLE_TABLES)
-	err = vrf_fib_rule(dev, RTNL_FAMILY_IPMR, true);
+	err = vrf_fib_rule(dev, RTNL_FAMILY_IPMR, true, FIB_RULE_PREF, false);
 	if (err < 0)
 		goto ipmr_err;
 #endif
 
 #if IS_ENABLED(CONFIG_IPV6_MROUTE_MULTIPLE_TABLES)
-	err = vrf_fib_rule(dev, RTNL_FAMILY_IP6MR, true);
+	err = vrf_fib_rule(dev, RTNL_FAMILY_IP6MR, true, FIB_RULE_PREF, false);
 	if (err < 0)
 		goto ip6mr_err;
 #endif
@@ -1233,17 +1235,20 @@ static int vrf_add_fib_rules(const struct net_device *dev)
 
 #if IS_ENABLED(CONFIG_IPV6_MROUTE_MULTIPLE_TABLES)
 ip6mr_err:
-	vrf_fib_rule(dev, RTNL_FAMILY_IPMR,  false);
+	vrf_fib_rule(dev, RTNL_FAMILY_IPMR,  false, FIB_RULE_PREF, false);
 #endif
 
 #if IS_ENABLED(CONFIG_IP_MROUTE_MULTIPLE_TABLES)
 ipmr_err:
-	vrf_fib_rule(dev, AF_INET6,  false);
+	vrf_fib_rule(dev, AF_INET6, false, 101, true);
 #endif
 
+ipv6_err2:
+	vrf_fib_rule(dev, AF_INET6, false, 100, false);
 ipv6_err:
-	vrf_fib_rule(dev, AF_INET,  false);
-
+	vrf_fib_rule(dev, AF_INET,  false, 101, true);
+out_err2:
+	vrf_fib_rule(dev, AF_INET,  false, 100, false);
 out_err:
 	netdev_err(dev, "Failed to add FIB rules.\n");
 	return err;

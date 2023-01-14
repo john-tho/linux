@@ -29,6 +29,15 @@
 #define NETLINK_RDMA		20
 #define NETLINK_CRYPTO		21	/* Crypto layer */
 #define NETLINK_SMC		22	/* SMC monitoring */
+#define NETLINK_WIRELESS       17
+#define NETLINK_STP            23
+#define NETLINK_UNICL          24
+#define NETLINK_MESH           25
+#define NETLINK_LOG            26
+#define NETLINK_PACKET_HOOK    27
+#define NETLINK_LTE_GCT         28
+#define NETLINK_ADDRLIST       29
+#define NETLINK_PTP_HOOK	30
 
 #define NETLINK_INET_DIAG	NETLINK_SOCK_DIAG
 

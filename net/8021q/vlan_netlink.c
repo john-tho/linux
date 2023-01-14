@@ -182,6 +182,11 @@ static int vlan_newlink(struct net *src_net, struct net_device *dev,
 	else if (dev->mtu > max_mtu)
 		return -EINVAL;
 
+	dev->l2mtu = real_dev->l2mtu > 4 ? real_dev->l2mtu - 4 : 0;
+	if (dev->l2mtu && dev->mtu > dev->l2mtu) {
+	    dev->mtu = dev->l2mtu;
+	}
+
 	err = vlan_changelink(dev, tb, data, extack);
 	if (!err)
 		err = register_vlan_dev(dev, extack);

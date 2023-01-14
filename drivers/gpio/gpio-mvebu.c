@@ -1090,6 +1090,7 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 	struct irq_chip_generic *gc;
 	struct irq_chip_type *ct;
 	unsigned int ngpios;
+	unsigned base = 0;
 	bool have_irqs;
 	int soc_variant;
 	int i, cpu, id;
@@ -1115,6 +1116,7 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, mvchip);
 
+#ifndef CONFIG_MIPS_MIKROTIK
 	if (of_property_read_u32(pdev->dev.of_node, "ngpios", &ngpios)) {
 		dev_err(&pdev->dev, "Missing ngpios OF property\n");
 		return -ENODEV;
@@ -1122,9 +1124,16 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 
 	id = of_alias_get_id(pdev->dev.of_node, "gpio");
 	if (id < 0) {
-		dev_err(&pdev->dev, "Couldn't get OF id\n");
-		return id;
+		of_property_read_u32(pdev->dev.of_node, "gpio-start",
+				     &base);
+	} else {
+		base = id * MVEBU_MAX_GPIO_PER_BANK;
 	}
+#else
+	ngpios = 32;
+	id = 0;
+	base = 28;
+#endif
 
 	mvchip->clk = devm_clk_get(&pdev->dev, NULL);
 	/* Not all SoCs require a clock.*/
@@ -1143,7 +1152,7 @@ static int mvebu_gpio_probe(struct platform_device *pdev)
 	mvchip->chip.set = mvebu_gpio_set;
 	if (have_irqs)
 		mvchip->chip.to_irq = mvebu_gpio_to_irq;
-	mvchip->chip.base = id * MVEBU_MAX_GPIO_PER_BANK;
+	mvchip->chip.base = base;
 	mvchip->chip.ngpio = ngpios;
 	mvchip->chip.can_sleep = false;
 	mvchip->chip.of_node = np;

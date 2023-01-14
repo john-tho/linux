@@ -114,15 +114,38 @@ enum ip_conntrack_status {
 	IPS_OFFLOAD_BIT = 14,
 	IPS_OFFLOAD = (1 << IPS_OFFLOAD_BIT),
 
+	IPS_FASTPATH_BIT = 15,
+	IPS_FASTPATH = (1 << IPS_FASTPATH_BIT),
+
+	/* Conntrack has been offloaded to hardware. */
+	IPS_HW_OFFLOAD_BIT = 16,
+	IPS_HW_OFFLOAD = (1 << IPS_HW_OFFLOAD_BIT),
+
+	/* Skip HW offloding for this Conntrack (usually, temporary) */
+	IPS_HW_SKIP_BIT = 17,
+	IPS_HW_SKIP = (1 << IPS_HW_SKIP_BIT),
+
+	/* Completely disable HW offloding for this Conntrack */
+	IPS_HW_DISABLE_BIT = 18,
+	IPS_HW_DISABLE = (1 << IPS_HW_DISABLE_BIT),
+
+	/* Hardware traps packets to CPU. Valid only when IPS_HW_OFFLOAD_BIT
+	 * is set.
+	 */
+	IPS_HW_TRAP_BIT = 19,
+	IPS_HW_TRAP = (1 << IPS_HW_TRAP_BIT),
+
+
 	/* Be careful here, modifying these bits can make things messy,
 	 * so don't let users modify them directly.
 	 */
 	IPS_UNCHANGEABLE_MASK = (IPS_NAT_DONE_MASK | IPS_NAT_MASK |
 				 IPS_EXPECTED | IPS_CONFIRMED | IPS_DYING |
 				 IPS_SEQ_ADJUST | IPS_TEMPLATE | IPS_UNTRACKED |
-				 IPS_OFFLOAD),
+				 IPS_OFFLOAD | IPS_HW_OFFLOAD | IPS_HW_SKIP |
+				 IPS_HW_DISABLE | IPS_HW_TRAP),
 
-	__IPS_MAX_BIT = 15,
+	__IPS_MAX_BIT = 18,
 };
 
 /* Connection tracking event types */

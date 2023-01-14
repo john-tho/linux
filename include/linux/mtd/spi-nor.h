@@ -238,6 +238,7 @@ enum spi_nor_option_flags {
 	SNOR_F_HAS_16BIT_SR	= BIT(9),
 	SNOR_F_NO_READ_CR	= BIT(10),
 	SNOR_F_HAS_SR_TB_BIT6	= BIT(11),
+	SNOR_F_SST		= BIT(12),
 
 };
 
@@ -589,8 +590,10 @@ struct spi_nor {
 	size_t			bouncebuf_size;
 	const struct flash_info	*info;
 	u32			page_size;
+	u16			chunk_size;
 	u8			addr_width;
 	u8			erase_opcode;
+	u8			sector_erase_opcode;
 	u8			read_opcode;
 	u8			read_dummy;
 	u8			program_opcode;

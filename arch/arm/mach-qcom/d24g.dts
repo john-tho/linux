@@ -1,0 +1,97 @@
+/dts-v1/;
+#define BIG_DK
+#define NAND
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "D24GiR";
+
+	leds {
+		compatible = "leds-rb";
+		system-led {
+			red {
+				gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+			};
+			green {
+				gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+			};
+			blue {
+				gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			};
+		};
+		button {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		mode-button {
+			gpios = <&tlmm 4 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		mpcie-power-off {
+			gpios = <&tlmm 51 GPIO_ACTIVE_LOW>;
+		};
+		usb-power-off {
+			gpios = <&tlmm 44 GPIO_ACTIVE_LOW>;
+		};
+	};
+	poe_out_simple: poe-out-simple {
+		compatible = "rb,poe-out-simple";
+		eth_port = <1>;
+		gpo_on = <&tlmm 40 GPIO_ACTIVE_HIGH>;
+		gpi_status = <&tlmm 41 GPIO_ACTIVE_HIGH>;
+		status = "ok";
+	};
+	wlan-data {
+		compatible = "wlan-data-rb";
+		wlan1 {
+			pci-domain-nr = <0>;
+			pci-bus-nr = <1>;
+			caldata-instance = <1>;
+		};
+	};
+};
+
+&tlmm {
+	edma_pins: ema_pinmux {
+		mux {
+			pins = "gpio6", "gpio7";
+			function = "mdio";
+			bias-disable;
+		};
+	};
+};
+
+&edma {
+	port_map = <4 3 (-1)>;
+	pinctrl-0 = <&edma_pins>;
+	pinctrl-names = "default";
+};
+
+&pcie0 {
+	persts-gpio = <&tlmm 38 GPIO_ACTIVE_LOW>, /* PCIe switch IC */
+			<&tlmm 48 GPIO_ACTIVE_HIGH>, /* cascade */
+			<&tlmm 42 GPIO_ACTIVE_HIGH>, /* wigig */
+			<&tlmm 49 GPIO_ACTIVE_HIGH>; /* mpcie */
+	status = "ok";
+};
+
+&usb2 {
+	status = "ok";
+};
+
+&usb2_hs_phy {
+	status = "ok";
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&usb3_ss_phy {
+	status = "ok";
+};
+
+&usb3_hs_phy {
+	status = "ok";
+};
+

@@ -1086,7 +1086,7 @@ static int fib_check_nh_v4_gw(struct net *net, struct fib_nh *nh, u32 table,
 			NL_SET_ERR_MSG(extack, "Nexthop has invalid gateway");
 			return -EINVAL;
 		}
-		if (!netif_carrier_ok(dev))
+		if (0 && !netif_carrier_ok(dev))
 			nh->fib_nh_flags |= RTNH_F_LINKDOWN;
 		nh->fib_nh_dev = dev;
 		dev_hold(dev);
@@ -1144,7 +1144,7 @@ static int fib_check_nh_v4_gw(struct net *net, struct fib_nh *nh, u32 table,
 		goto out;
 	}
 	dev_hold(dev);
-	if (!netif_carrier_ok(dev))
+	if (0 && !netif_carrier_ok(dev))
 		nh->fib_nh_flags |= RTNH_F_LINKDOWN;
 	err = (dev->flags & IFF_UP) ? 0 : -ENETDOWN;
 out:
@@ -1179,7 +1179,7 @@ static int fib_check_nh_nongw(struct net *net, struct fib_nh *nh,
 	nh->fib_nh_dev = in_dev->dev;
 	dev_hold(nh->fib_nh_dev);
 	nh->fib_nh_scope = RT_SCOPE_HOST;
-	if (!netif_carrier_ok(nh->fib_nh_dev))
+	if (0 && !netif_carrier_ok(nh->fib_nh_dev))
 		nh->fib_nh_flags |= RTNH_F_LINKDOWN;
 	err = 0;
 out:
@@ -1293,7 +1293,7 @@ __be32 fib_info_update_nhc_saddr(struct net *net, struct fib_nh_common *nhc,
 		return inet_select_addr(nhc->nhc_dev, 0, scope);
 
 	nh = container_of(nhc, struct fib_nh, nh_common);
-	nh->nh_saddr = inet_select_addr(nh->fib_nh_dev, nh->fib_nh_gw4, scope);
+	nh->nh_saddr = inet_select_addr(nh->fib_nh_dev, nh->fib_nh_gw4 ? nh->fib_nh_gw4 : nhc->nhc_gw.ipv6.in6_u.u6_addr32[1], scope);
 	nh->nh_saddr_genid = atomic_read(&net->ipv4.dev_addr_genid);
 
 	return nh->nh_saddr;
@@ -1523,10 +1523,12 @@ struct fib_info *fib_create_info(struct fib_config *cfg,
 			fi->fib_flags |= RTNH_F_LINKDOWN;
 	}
 
+#if 0 /* Do not check validity of prefsrc addresses */
 	if (fi->fib_prefsrc && !fib_valid_prefsrc(cfg, fi->fib_prefsrc)) {
 		NL_SET_ERR_MSG(extack, "Invalid prefsrc address");
 		goto err_inval;
 	}
+#endif	
 
 	if (!fi->nh) {
 		change_nexthops(fi) {
@@ -1816,6 +1818,26 @@ nla_put_failure:
 	return -EMSGSIZE;
 }
 
+int fib_sync_down_proto(struct net *net, unsigned char proto)
+{
+	int ret = 0;
+	struct hlist_head *head;
+	struct fib_info *fi;
+	unsigned int i;
+
+	if (!fib_info_hash) return 0;
+
+	for (i = 0; i < fib_info_hash_size; i++) {
+	    head = &fib_info_hash[i];
+            hlist_for_each_entry(fi, head, fib_hash) {
+		if (fi->fib_protocol != proto) continue;
+		fi->fib_flags |= RTNH_F_DEAD;
+		ret++;
+	    }
+	}
+	return ret;
+}
+
 /*
  * Update FIB if:
  * - local address disappeared -> we must delete all the entries
@@ -1838,10 +1860,12 @@ int fib_sync_down_addr(struct net_device *dev, __be32 local)
 		if (!net_eq(fi->fib_net, net) ||
 		    fi->fib_tb_id != tb_id)
 			continue;
+#if (0) /* Do not invalidate routes based on prefsrc */
 		if (fi->fib_prefsrc == local) {
 			fi->fib_flags |= RTNH_F_DEAD;
 			ret++;
 		}
+#endif
 	}
 	return ret;
 }
@@ -2093,9 +2117,6 @@ int fib_sync_up(struct net_device *dev, unsigned char nh_flags)
 		return 0;
 
 	if (nh_flags & RTNH_F_DEAD) {
-		unsigned int flags = dev_get_flags(dev);
-
-		if (flags & (IFF_RUNNING | IFF_LOWER_UP))
 			nh_flags |= RTNH_F_LINKDOWN;
 	}
 

@@ -9,6 +9,7 @@
 #include <linux/netfilter_ipv6/ip6_tables.h>
 #include <linux/slab.h>
 #include <net/ipv6.h>
+#include <asm/unaligned.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
@@ -47,7 +48,7 @@ ip6t_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
 	hop_limit = ipv6_hdr(skb)->hop_limit;
 
 	/* flowlabel and prio (includes version, which shouldn't change either */
-	flowlabel = *((u_int32_t *)ipv6_hdr(skb));
+	flowlabel = get_unaligned((u_int32_t *)ipv6_hdr(skb));
 
 	ret = ip6t_do_table(skb, state, state->net->ipv6.ip6table_mangle);
 
@@ -56,7 +57,7 @@ ip6t_mangle_out(struct sk_buff *skb, const struct nf_hook_state *state)
 	     !ipv6_addr_equal(&ipv6_hdr(skb)->daddr, &daddr) ||
 	     skb->mark != mark ||
 	     ipv6_hdr(skb)->hop_limit != hop_limit ||
-	     flowlabel != *((u_int32_t *)ipv6_hdr(skb)))) {
+	     flowlabel != get_unaligned((u_int32_t *)ipv6_hdr(skb)))) {
 		err = ip6_route_me_harder(state->net, skb);
 		if (err < 0)
 			ret = NF_DROP_ERR(err);

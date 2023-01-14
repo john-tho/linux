@@ -241,10 +241,12 @@ SECTIONS
 
 	BSS_SECTION(0, 0, 0)
 
+	.misc.data : {
 	. = ALIGN(PAGE_SIZE);
 	init_pg_dir = .;
 	. += INIT_DIR_SIZE;
 	init_pg_end = .;
+	}
 
 	__pecoff_data_size = ABSOLUTE(. - __initdata_begin);
 	_end = .;

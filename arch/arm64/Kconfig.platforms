@@ -145,6 +145,7 @@ config ARCH_MESON
 
 config ARCH_MVEBU
 	bool "Marvell EBU SoC Family"
+	select ARMADA_AP_CPU_CLK
 	select ARMADA_AP806_SYSCON
 	select ARMADA_CP110_SYSCON
 	select ARMADA_37XX_CLK
@@ -160,6 +161,10 @@ config ARCH_MVEBU
 	select PINCTRL_ARMADA_37XX
 	select PINCTRL_ARMADA_AP806
 	select PINCTRL_ARMADA_CP110
+	select PINCTRL_ARMADA_XP
+	select PINCTRL_MSYS
+	select PHYLINK
+	select HAVE_OPROFILE
 	help
 	  This enables support for Marvell EBU familly, including:
 	   - Armada 3700 SoC Family
@@ -184,6 +189,8 @@ config ARCH_QCOM
 	bool "Qualcomm Platforms"
 	select GPIOLIB
 	select PINCTRL
+	select MAILBOX
+	select QCOM_SCM
 	help
 	  This enables support for the ARMv8 based Qualcomm chipsets.
 

@@ -52,10 +52,11 @@ mr_table_alloc(struct net *net, u32 id,
 	}
 	INIT_LIST_HEAD(&mrt->mfc_cache_list);
 	INIT_LIST_HEAD(&mrt->mfc_unres_queue);
+	INIT_LIST_HEAD(&mrt->vif_list);
+	mrt->reg_vif = NULL;
 
 	timer_setup(&mrt->ipmr_expire_timer, expire_func, 0);
 
-	mrt->mroute_reg_vif_num = -1;
 	table_set(mrt, net);
 	return mrt;
 }
@@ -68,14 +69,25 @@ void *mr_mfc_find_parent(struct mr_table *mrt, void *hasharg, int parent)
 
 	list = rhltable_lookup(&mrt->mfc_hash, hasharg, *mrt->ops.rht_params);
 	rhl_for_each_entry_rcu(c, tmp, list, mnode)
-		if (parent == -1 || parent == c->mfc_parent)
+		if (parent == -1 || parent == c->mfc_parent->index)
 			return c;
 
 	return NULL;
 }
 EXPORT_SYMBOL(mr_mfc_find_parent);
 
-void *mr_mfc_find_any_parent(struct mr_table *mrt, int vifi)
+static int mr_mfc_has_vif(struct mr_mfc *c, struct vif_device *vif)
+{
+	unsigned i;
+
+	for (i = 0; i < c->mfc_un.res.output_dev_count; ++i) {
+		if (c->mfc_un.res.output_devs[i] == vif)
+			return 1;
+	}
+	return 0;
+}
+
+void *mr_mfc_find_any_parent(struct mr_table *mrt, struct vif_device *vif)
 {
 	struct rhlist_head *tmp, *list;
 	struct mr_mfc *c;
@@ -83,30 +95,31 @@ void *mr_mfc_find_any_parent(struct mr_table *mrt, int vifi)
 	list = rhltable_lookup(&mrt->mfc_hash, mrt->ops.cmparg_any,
 			       *mrt->ops.rht_params);
 	rhl_for_each_entry_rcu(c, tmp, list, mnode)
-		if (c->mfc_un.res.ttls[vifi] < 255)
+		if (mr_mfc_has_vif(c, vif))
 			return c;
 
 	return NULL;
 }
 EXPORT_SYMBOL(mr_mfc_find_any_parent);
 
-void *mr_mfc_find_any(struct mr_table *mrt, int vifi, void *hasharg)
+void *mr_mfc_find_any(struct mr_table *mrt, struct vif_device *vif,
+		      void *hasharg)
 {
 	struct rhlist_head *tmp, *list;
 	struct mr_mfc *c, *proxy;
 
 	list = rhltable_lookup(&mrt->mfc_hash, hasharg, *mrt->ops.rht_params);
 	rhl_for_each_entry_rcu(c, tmp, list, mnode) {
-		if (c->mfc_un.res.ttls[vifi] < 255)
+		if (mr_mfc_has_vif(c, vif))
 			return c;
 
 		/* It's ok if the vifi is part of the static tree */
 		proxy = mr_mfc_find_any_parent(mrt, c->mfc_parent);
-		if (proxy && proxy->mfc_un.res.ttls[vifi] < 255)
+		if (proxy && mr_mfc_has_vif(proxy, vif))
 			return c;
 	}
 
-	return mr_mfc_find_any_parent(mrt, vifi);
+	return mr_mfc_find_any_parent(mrt, vif);
 }
 EXPORT_SYMBOL(mr_mfc_find_any);
 
@@ -114,12 +127,13 @@ EXPORT_SYMBOL(mr_mfc_find_any);
 void *mr_vif_seq_idx(struct net *net, struct mr_vif_iter *iter, loff_t pos)
 {
 	struct mr_table *mrt = iter->mrt;
+	struct vif_device *i;
 
-	for (iter->ct = 0; iter->ct < mrt->maxvif; ++iter->ct) {
-		if (!VIF_EXISTS(mrt, iter->ct))
-			continue;
-		if (pos-- == 0)
-			return &mrt->vif_table[iter->ct];
+	list_for_each_entry(i, &mrt->vif_list, list) {
+		if (!pos) {
+			return i;
+		}
+		--pos;
 	}
 	return NULL;
 }
@@ -129,18 +143,12 @@ void *mr_vif_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct mr_vif_iter *iter = seq->private;
 	struct net *net = seq_file_net(seq);
-	struct mr_table *mrt = iter->mrt;
 
 	++*pos;
 	if (v == SEQ_START_TOKEN)
 		return mr_vif_seq_idx(net, iter, 0);
 
-	while (++iter->ct < mrt->maxvif) {
-		if (!VIF_EXISTS(mrt, iter->ct))
-			continue;
-		return &mrt->vif_table[iter->ct];
-	}
-	return NULL;
+	return mr_vif_seq_idx(net, iter, ++iter->ct);
 }
 EXPORT_SYMBOL(mr_vif_seq_next);
 
@@ -212,17 +220,16 @@ int mr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
 	struct nlattr *mp_attr;
 	struct rtnexthop *nhp;
 	unsigned long lastuse;
-	int ct;
+	int i;
 
 	/* If cache is unresolved, don't try to parse IIF and OIF */
-	if (c->mfc_parent >= MAXVIFS) {
+	if (!c->mfc_parent) {
 		rtm->rtm_flags |= RTNH_F_UNRESOLVED;
 		return -ENOENT;
 	}
 
-	if (VIF_EXISTS(mrt, c->mfc_parent) &&
-	    nla_put_u32(skb, RTA_IIF,
-			mrt->vif_table[c->mfc_parent].dev->ifindex) < 0)
+	if (c->mfc_parent->dev &&
+	    nla_put_u32(skb, RTA_IIF, c->mfc_parent->dev->ifindex) < 0)
 		return -EMSGSIZE;
 
 	if (c->mfc_flags & MFC_OFFLOAD)
@@ -232,9 +239,9 @@ int mr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
 	if (!mp_attr)
 		return -EMSGSIZE;
 
-	for (ct = c->mfc_un.res.minvif; ct < c->mfc_un.res.maxvif; ct++) {
-		if (VIF_EXISTS(mrt, ct) && c->mfc_un.res.ttls[ct] < 255) {
-			struct vif_device *vif;
+	for (i = 0; i < c->mfc_un.res.output_dev_count; ++i) {
+		struct vif_device *vif = c->mfc_un.res.output_devs[i];
+		if (!vif) continue;
 
 			nhp = nla_reserve_nohdr(skb, sizeof(*nhp));
 			if (!nhp) {
@@ -243,12 +250,10 @@ int mr_fill_mroute(struct mr_table *mrt, struct sk_buff *skb,
 			}
 
 			nhp->rtnh_flags = 0;
-			nhp->rtnh_hops = c->mfc_un.res.ttls[ct];
-			vif = &mrt->vif_table[ct];
+		nhp->rtnh_hops = vif->threshold;
 			nhp->rtnh_ifindex = vif->dev->ifindex;
 			nhp->rtnh_len = sizeof(*nhp);
 		}
-	}
 
 	nla_nest_end(skb, mp_attr);
 
@@ -272,17 +277,14 @@ static bool mr_mfc_uses_dev(const struct mr_table *mrt,
 			    const struct mr_mfc *c,
 			    const struct net_device *dev)
 {
-	int ct;
+	int i;
 
-	for (ct = c->mfc_un.res.minvif; ct < c->mfc_un.res.maxvif; ct++) {
-		if (VIF_EXISTS(mrt, ct) && c->mfc_un.res.ttls[ct] < 255) {
-			const struct vif_device *vif;
+	for (i = 0; i < c->mfc_un.res.output_dev_count; ++i) {
+		struct vif_device *vif = c->mfc_un.res.output_devs[i];
 
-			vif = &mrt->vif_table[ct];
 			if (vif->dev == dev)
 				return true;
 		}
-	}
 	return false;
 }
 
@@ -401,19 +403,15 @@ int mr_dump(struct net *net, struct notifier_block *nb, unsigned short family,
 		return err;
 
 	for (mrt = mr_iter(net, NULL); mrt; mrt = mr_iter(net, mrt)) {
-		struct vif_device *v = &mrt->vif_table[0];
 		struct mr_mfc *mfc;
-		int vifi;
+		struct vif_device *i;
 
 		/* Notifiy on table VIF entries */
 		read_lock(mrt_lock);
-		for (vifi = 0; vifi < mrt->maxvif; vifi++, v++) {
-			if (!v->dev)
-				continue;
-
+		list_for_each_entry(i, &mrt->vif_list, list) {
 			err = mr_call_vif_notifier(nb, family,
 						   FIB_EVENT_VIF_ADD,
-						   v, vifi, mrt->id, extack);
+						   i, i->index, mrt->id, extack);
 			if (err)
 				break;
 		}

@@ -108,6 +108,24 @@ static u32 unaligned_action;
 #endif
 extern void show_registers(struct pt_regs *regs);
 
+#define RATE_BURST (10*5*HZ)
+#define RATE_COST (5*HZ)
+
+static int un_ratelimit(void) {
+	static unsigned toks = RATE_BURST;
+	static unsigned last_msg;
+
+	unsigned now = jiffies;
+	toks += now - last_msg;
+	if (toks > RATE_BURST) toks = RATE_BURST;
+
+	if (toks >= RATE_COST) {
+		toks -= RATE_COST;
+		return 1;
+	}
+	return 0;
+}
+
 #ifdef __BIG_ENDIAN
 #define     _LoadHW(addr, value, res, type)  \
 do {                                                        \
@@ -2287,11 +2305,23 @@ sigill:
 	force_sig(SIGILL);
 }
 
+extern asmlinkage void do_page_fault(struct pt_regs *regs, unsigned long write,
+				     unsigned long address);
+
 asmlinkage void do_ade(struct pt_regs *regs)
 {
 	enum ctx_state prev_state;
 	unsigned int __user *pc;
 	mm_segment_t seg;
+	unsigned long badvaddr = regs->cp0_badvaddr;
+
+	/* We are running in VM protected enviroment and
+	   we hit KSEG0, or KSEG3 address */
+	if ((badvaddr & 3) == 0 && KSEGX(badvaddr) == KSEG3) {
+		do_page_fault(regs, (regs->cp0_cause & 0x7c) == 20,
+			      badvaddr);
+		return;
+	}
 
 	prev_state = exception_enter();
 	perf_sw_event(PERF_COUNT_SW_ALIGNMENT_FAULTS,
@@ -2353,6 +2383,10 @@ asmlinkage void do_ade(struct pt_regs *regs)
 	if (unaligned_action == UNALIGNED_ACTION_SHOW)
 		show_registers(regs);
 	pc = (unsigned int __user *)exception_epc(regs);
+
+	if (!user_mode(regs) && un_ratelimit())
+		printk(KERN_WARNING "unaligned data access %lx at %p %pS\n",
+			badvaddr, pc, (void *)pc);
 
 	seg = get_fs();
 	if (!user_mode(regs))

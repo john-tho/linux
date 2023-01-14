@@ -58,6 +58,7 @@ enum {
 #include <linux/hash.h>
 
 #include <net/neighbour.h>
+#include <asm/unaligned.h>
 
 /* Set to 3 to get tracing... */
 #define ND_DEBUG 1
@@ -81,7 +82,7 @@ struct nd_msg {
         struct icmp6hdr	icmph;
         struct in6_addr	target;
 	__u8		opt[0];
-};
+} __attribute__((packed));
 
 struct rs_msg {
 	struct icmp6hdr	icmph;
@@ -92,7 +93,7 @@ struct ra_msg {
         struct icmp6hdr		icmph;
 	__be32			reachable_time;
 	__be32			retrans_timer;
-};
+} __attribute__((packed));
 
 struct rd_msg {
 	struct icmp6hdr icmph;
@@ -371,10 +372,10 @@ static inline u32 ndisc_hashfn(const void *pkey, const struct net_device *dev, _
 {
 	const u32 *p32 = pkey;
 
-	return (((p32[0] ^ hash32_ptr(dev)) * hash_rnd[0]) +
-		(p32[1] * hash_rnd[1]) +
-		(p32[2] * hash_rnd[2]) +
-		(p32[3] * hash_rnd[3]));
+	return (((get_unaligned(&p32[0]) ^ hash32_ptr(dev)) * hash_rnd[0]) +
+		(get_unaligned(&p32[1]) * hash_rnd[1]) +
+		(get_unaligned(&p32[2]) * hash_rnd[2]) +
+		 (get_unaligned(&p32[3]) * hash_rnd[3]));
 }
 
 static inline struct neighbour *__ipv6_neigh_lookup_noref(struct net_device *dev, const void *pkey)

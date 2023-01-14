@@ -31,7 +31,7 @@ static bool mac_mt(const struct sk_buff *skb, struct xt_action_param *par)
 		return false;
 	if (skb_mac_header(skb) < skb->head)
 		return false;
-	if (skb_mac_header(skb) + ETH_HLEN > skb->data)
+	if (skb_mac_header(skb) > skb->data - ETH_HLEN)
 		return false;
 	ret  = ether_addr_equal(eth_hdr(skb)->h_source, info->srcaddr);
 	ret ^= info->invert;

@@ -62,6 +62,9 @@ struct nand_chip;
 #define NAND_CMD_PARAM		0xec
 #define NAND_CMD_GET_FEATURES	0xee
 #define NAND_CMD_SET_FEATURES	0xef
+#define NAND_CMD_ONFI_READUID	0xed
+#define NAND_CMD_GET_FEATURES   0xee
+#define NAND_CMD_SET_FEATURES   0xef
 #define NAND_CMD_RESET		0xff
 
 /* Extended commands for large page devices */
@@ -74,6 +77,7 @@ struct nand_chip;
 /* Status bits */
 #define NAND_STATUS_FAIL	0x01
 #define NAND_STATUS_FAIL_N1	0x02
+#define NAND_STATUS_RECOM_REWRT	0x08	/* Recommended to rewrite for BENAND */
 #define NAND_STATUS_TRUE_READY	0x20
 #define NAND_STATUS_READY	0x40
 #define NAND_STATUS_WP		0x80
@@ -159,6 +163,9 @@ enum nand_ecc_algo {
 
 /* Device needs 3rd row address cycle */
 #define NAND_ROW_ADDR_3		0x00004000
+
+/* NAND does hardware ECC, which hides bit-errors. Have to get ecc status! */
+#define NAND_HAS_HW_ECC		0x00008000
 
 /* Options valid for Samsung large page devices */
 #define NAND_SAMSUNG_LP_OPTIONS NAND_CACHEPRG
@@ -1137,6 +1144,14 @@ struct nand_chip {
 		void *priv;
 	} manufacturer;
 };
+
+#define BACKUP_4xFF_OFFSET	36
+#define ALWAYS_4x00_OFFSET	32
+#define ECC_ID_OFFSET		01
+/* ECC_ID_OFFSET contains:
+ *	0x00 => mlc ecc (>= 4bit/512 bytes),
+ *	0xff => slc ecc (>= 1bit/256 bytes)
+ */
 
 extern const struct mtd_ooblayout_ops nand_ooblayout_sp_ops;
 extern const struct mtd_ooblayout_ops nand_ooblayout_lp_ops;

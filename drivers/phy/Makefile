@@ -29,3 +29,5 @@ obj-y					+= broadcom/	\
 					   socionext/	\
 					   st/		\
 					   ti/
+obj-$(CONFIG_PHY_QCOM_DWC3)		+= phy-qcom-dwc3.o
+obj-$(CONFIG_PHY_QCA_PCIE_QMP)		+= phy-qca-pcie-qmp.o

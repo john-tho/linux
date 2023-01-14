@@ -187,6 +187,14 @@ static int c0_compare_int_pending(void)
  * so wait up to worst case number of cycle counter ticks for timer interrupt
  * changes to propagate to the cause register.
  */
+#define long_back_to_back_c0_hazard() \
+	do { \
+		back_to_back_c0_hazard(); \
+		back_to_back_c0_hazard(); \
+		back_to_back_c0_hazard(); \
+		back_to_back_c0_hazard(); \
+	} while (0)
+
 #define COMPARE_INT_SEEN_TICKS 50
 
 int c0_compare_int_usable(void)
@@ -204,7 +212,7 @@ int c0_compare_int_usable(void)
 	if (c0_compare_int_pending()) {
 		cnt = read_c0_count();
 		write_c0_compare(cnt);
-		back_to_back_c0_hazard();
+		long_back_to_back_c0_hazard();
 		while (read_c0_count() < (cnt  + COMPARE_INT_SEEN_TICKS))
 			if (!c0_compare_int_pending())
 				break;
@@ -216,7 +224,7 @@ int c0_compare_int_usable(void)
 		cnt = read_c0_count();
 		cnt += delta;
 		write_c0_compare(cnt);
-		back_to_back_c0_hazard();
+		long_back_to_back_c0_hazard();
 		if ((int)(read_c0_count() - cnt) < 0)
 		    break;
 		/* increase delta if the timer was already expired */
@@ -232,7 +240,7 @@ int c0_compare_int_usable(void)
 		return 0;
 	cnt = read_c0_count();
 	write_c0_compare(cnt);
-	back_to_back_c0_hazard();
+	long_back_to_back_c0_hazard();
 	while (read_c0_count() < (cnt + COMPARE_INT_SEEN_TICKS))
 		if (!c0_compare_int_pending())
 			break;

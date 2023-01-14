@@ -2001,6 +2001,16 @@ config WATCHDOG_SUN4V
 	  To compile this driver as a module, choose M here. The module will
 	  be called sun4v_wdt.
 
+# TILE Architecture
+
+config WATCHDOG_TILE
+	tristate "TILE watchdog support"
+	depends on TILE
+	help
+	  Say Y here to enable the TILE paravirtualized watchdog driver.
+	  A hypervisor "watchdog" device must be configured.  (The
+	  initial implementation is an I2C-based PCF8563 chip.)
+
 # XTENSA Architecture
 
 # Xen Architecture

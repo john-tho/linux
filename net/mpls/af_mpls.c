@@ -26,6 +26,8 @@
 #include <net/ipv6_stubs.h>
 #include <net/rtnh.h>
 #include "internal.h"
+#include <linux/icmp.h>
+#include <linux/inetdevice.h>
 
 /* max memory we will use for mpls_route */
 #define MAX_MPLS_ROUTE_MEM	4096
@@ -35,7 +37,6 @@
  */
 #define MAX_MP_SELECT_LABELS 4
 
-#define MPLS_NEIGH_TABLE_UNSPEC (NEIGH_LINK_TABLE + 1)
 
 static int label_limit = (1 << 20) - 1;
 static int ttl_max = 255;
@@ -74,7 +75,7 @@ static void rtmsg_lfib(int event, u32 label, struct mpls_route *rt,
 		       struct nlmsghdr *nlh, struct net *net, u32 portid,
 		       unsigned int nlm_flags);
 
-static struct mpls_route *mpls_route_input_rcu(struct net *net, unsigned index)
+struct mpls_route *mpls_route_input_rcu(struct net *net, unsigned index)
 {
 	struct mpls_route *rt = NULL;
 
@@ -92,26 +93,11 @@ bool mpls_output_possible(const struct net_device *dev)
 }
 EXPORT_SYMBOL_GPL(mpls_output_possible);
 
-static u8 *__mpls_nh_via(struct mpls_route *rt, struct mpls_nh *nh)
-{
-	return (u8 *)nh + rt->rt_via_offset;
-}
-
-static const u8 *mpls_nh_via(const struct mpls_route *rt,
-			     const struct mpls_nh *nh)
-{
-	return __mpls_nh_via((struct mpls_route *)rt, (struct mpls_nh *)nh);
-}
-
-static unsigned int mpls_nh_header_size(const struct mpls_nh *nh)
-{
-	/* The size of the layer 2.5 labels to be added for this route */
-	return nh->nh_labels * sizeof(struct mpls_shim_hdr);
-}
-
 unsigned int mpls_dev_mtu(const struct net_device *dev)
 {
 	/* The amount of data the layer 2 frame can hold */
+	unsigned m = dev->l2mtu ? dev->l2mtu : dev->mtu;
+	if (dev->mplsmtu && dev->mplsmtu < m) return dev->mplsmtu;
 	return dev->mtu;
 }
 EXPORT_SYMBOL_GPL(mpls_dev_mtu);
@@ -230,7 +216,7 @@ static struct mpls_nh *mpls_get_nexthop(struct mpls_route *rt, u8 index)
  * Since those fields can change at any moment, use READ_ONCE to
  * access both.
  */
-static struct mpls_nh *mpls_select_multipath(struct mpls_route *rt,
+struct mpls_nh *mpls_select_multipath(struct mpls_route *rt,
 					     struct sk_buff *skb)
 {
 	u32 hash = 0;
@@ -338,6 +324,159 @@ static bool mpls_egress(struct net *net, struct mpls_route *rt,
 	return success;
 }
 
+static void mpls_ttl_exceeded(struct net *net, struct mpls_entry_decoded dec,
+			      struct sk_buff *skb, struct mpls_route *rt,
+			      struct mpls_nh *nh) {
+	unsigned stacksize = 0;
+	struct iphdr *iph;
+	unsigned iplen;
+	struct net_device *out_dev;
+	unsigned outsz;
+	struct sk_buff *nskb;
+	struct iphdr *niph;
+	struct icmphdr *nicmph;
+	unsigned char *d;
+	unsigned new_header_size;
+	unsigned short cs;
+
+	// figure out size of remaining label stack
+	if (!dec.bos) {
+		struct mpls_shim_hdr *hdr = mpls_hdr(skb);
+		while (1) {
+			struct mpls_entry_decoded d;
+			stacksize += sizeof(*hdr);
+			if (!pskb_may_pull(skb, stacksize)) return;
+			d = mpls_entry_decode(hdr);
+			if (d.bos) break;
+			++hdr;
+		}
+	}
+
+	// check for IP
+	if (!pskb_may_pull(skb, stacksize + sizeof(*iph))) return;
+	iph = (struct iphdr *)(skb_network_header(skb) + stacksize);
+	if (iph->ihl < 5 || iph->version != 4) return;
+	iplen = ntohs(iph->tot_len);
+	if ((stacksize + iplen) > skb->len || iplen < (iph->ihl * 4)) return;
+	if (!pskb_may_pull(skb, stacksize + (iph->ihl * 4))) return;
+	if (ip_fast_csum((unsigned char *)iph, iph->ihl) != 0) return;
+
+	if (iph->ihl != 5) return; // do not handle options
+	// will need at most 128 bytes of orig packet
+	if (!pskb_may_pull(skb, stacksize + (iplen >= 128 ? 128 : iplen)))
+		return;
+
+	// only respond with error to non-fragment or first fragment
+	if ((iph->frag_off & htons(IP_OFFSET)) != 0) return;
+	// do not generate ICMP error to ICMP error
+	if (iph->protocol == IPPROTO_ICMP) {
+		struct icmphdr *icmph;
+		icmph = (struct icmphdr *)(((unsigned char *)iph)
+			+ (iph->ihl * 4));
+		if (iplen < sizeof(*iph) + sizeof(*icmph)) return;
+		if (icmp_is_err(icmph->type)) return;
+	}
+
+	out_dev = rcu_dereference(nh->nh_dev);
+	if (!mpls_output_possible(out_dev)) return;
+
+	new_header_size = mpls_nh_header_size(nh);
+
+	// construct reply, it will consist of:
+	// IPhdr+ICMPhdr+128bytesorigdatagram+ICMPexthdr+ICMPextobj
+	outsz = new_header_size + stacksize // label stack
+		+ sizeof(*niph) + sizeof(*nicmph)
+		+ 128 // original datagram
+		+ 4 // ICMPexthdr
+		+ 4 // ICMPextobj
+		+ (4 + stacksize); // decoded label + remaining stack
+
+	if (mpls_dev_mtu(out_dev) < outsz) return;
+
+	nskb = dev_alloc_skb(LL_RESERVED_SPACE(out_dev) + outsz);
+	if (!nskb) return;
+
+	skb_reserve(nskb, LL_RESERVED_SPACE(out_dev)
+		+ new_header_size + stacksize);
+
+	niph = (struct iphdr *)skb_put(nskb, sizeof(*niph));
+	memset(niph, 0, sizeof(*niph));
+	niph->version = 4;
+	niph->ihl = 5;
+	niph->tos = iph->tos;
+	niph->ttl = IPDEFTTL;
+	niph->protocol = IPPROTO_ICMP;
+	niph->daddr = iph->saddr;
+	niph->saddr = inet_select_addr(skb->dev, iph->saddr, RT_SCOPE_LINK);
+
+	nicmph = (struct icmphdr *)skb_put(nskb, sizeof(*nicmph));
+	memset(nicmph, 0, sizeof(*nicmph));
+	nicmph->type = ICMP_TIME_EXCEEDED;
+	nicmph->code = ICMP_EXC_TTL;
+	nicmph->un.frag.__unused = htons(32); // we always stick in 128 bytes
+
+	// copy at most 128 bytes of original packet, pad with 0 if necessary
+	d = skb_put(nskb, 128);
+	memcpy(d, iph, iplen >= 128 ? 128 : iplen);
+	if (iplen < 128) memset(d + iplen, 0, 128 - iplen);
+
+	d = skb_put(nskb, 8);
+	d[0] = 0x20;
+	d[1] = 0x00;
+	d[2] = 0x00;
+	d[3] = 0x00;
+	d[4] = ((stacksize + 4 + 4) >> 8) & 0xff;
+	d[5] = ((stacksize + 4 + 4) >> 0) & 0xff;
+	d[6] = 1;
+	d[7] = 1;
+
+	*((struct mpls_shim_hdr *)skb_put(nskb, 4))
+		= mpls_entry_encode(dec.label, dec.ttl, dec.tc, dec.bos);
+	if (stacksize)
+		memcpy(skb_put(nskb, stacksize), mpls_hdr(skb), stacksize);
+
+	cs = csum_fold(csum_partial((char *)d, 8 + 4 + stacksize, 0));
+	d[2] = (cs >> 0) & 0xff;
+	d[3] = (cs >> 8) & 0xff;
+
+	nicmph->checksum = csum_fold(csum_partial((char *)nicmph,
+		nskb->len - sizeof(*iph), 0));
+
+	nskb->ip_summed = CHECKSUM_NONE;
+	niph->tot_len = htons(nskb->len);
+	ip_send_check(niph);
+
+	if (unlikely(!new_header_size && dec.bos)) {
+		skb_reset_network_header(nskb);
+		nskb->protocol = htons(ETH_P_IP);
+	} else {
+		bool bos;
+		int i;
+		struct mpls_shim_hdr *hdr;
+		skb_push(nskb, new_header_size);
+		skb_reset_network_header(nskb);
+		/* Push the new labels */
+		hdr = mpls_hdr(nskb);
+		bos = dec.bos;
+		for (i = nh->nh_labels - 1; i >= 0; i--) {
+			hdr[i] = mpls_entry_encode(nh->nh_label[i],
+						   net->mpls.default_ttl, 0, bos);
+			bos = false;
+		}
+		nskb->protocol = htons(ETH_P_MPLS_UC);
+	}
+
+	nskb->dev = out_dev;
+
+	/* If via wasn't specified then send out using device address */
+	if (nh->nh_via_table == MPLS_NEIGH_TABLE_UNSPEC)
+		neigh_xmit(NEIGH_LINK_TABLE, out_dev,
+				 out_dev->dev_addr, nskb);
+	else
+		neigh_xmit(nh->nh_via_table, out_dev,
+				 mpls_nh_via(rt, nh), nskb);
+}
+
 static int mpls_forward(struct sk_buff *skb, struct net_device *dev,
 			struct packet_type *pt, struct net_device *orig_dev)
 {
@@ -387,6 +526,8 @@ static int mpls_forward(struct sk_buff *skb, struct net_device *dev,
 		goto drop;
 	}
 
+	if (rt->rt_pw) return mpls_pw_recv(rt, skb);
+
 	nh = mpls_select_multipath(rt, skb);
 	if (!nh)
 		goto err;
@@ -403,8 +544,10 @@ static int mpls_forward(struct sk_buff *skb, struct net_device *dev,
 	skb_forward_csum(skb);
 
 	/* Verify ttl is valid */
-	if (dec.ttl <= 1)
+	if (dec.ttl <= 1) {
+		mpls_ttl_exceeded(net, dec, skb, rt, nh);
 		goto err;
+	}
 	dec.ttl -= 1;
 
 	/* Find the output device */
@@ -448,6 +591,8 @@ static int mpls_forward(struct sk_buff *skb, struct net_device *dev,
 		}
 	}
 
+	if (nh->nh_limit && mpls_limit_query(nh->nh_limit, skb) != 0) goto drop;
+
 	mpls_stats_inc_outucastpkts(out_dev, skb);
 
 	/* If via wasn't specified then send out using device address */
@@ -488,6 +633,8 @@ static const struct nla_policy rtm_mpls_policy[RTA_MAX+1] = {
 struct mpls_route_config {
 	u32			rc_protocol;
 	u32			rc_ifindex;
+	u32			rc_pw;
+	u32			rc_limit;
 	u8			rc_via_table;
 	u8			rc_via_alen;
 	u8			rc_via[MAX_VIA_ALEN];
@@ -559,6 +706,8 @@ static void mpls_route_update(struct net *net, unsigned index,
 	platform_label = rtnl_dereference(net->mpls.platform_label);
 	rt = rtnl_dereference(platform_label[index]);
 	rcu_assign_pointer(platform_label[index], new);
+
+	if (new && new->rt_pw) mpls_pw_set_label(new->rt_pw, index);
 
 	mpls_notify_route(net, index, rt, new, info);
 
@@ -780,6 +929,7 @@ static int mpls_nh_build_from_cfg(struct mpls_route_config *cfg,
 	nh->nh_via_table = cfg->rc_via_table;
 	memcpy(__mpls_nh_via(rt, nh), cfg->rc_via, cfg->rc_via_alen);
 	nh->nh_via_alen = cfg->rc_via_alen;
+	nh->nh_limit = cfg->rc_limit;
 
 	err = mpls_nh_assign_dev(net, rt, nh, cfg->rc_ifindex);
 	if (err)
@@ -908,9 +1058,13 @@ static int mpls_nh_build_multi(struct mpls_route_config *cfg,
 		attrlen = rtnh_attrlen(rtnh);
 		if (attrlen > 0) {
 			struct nlattr *attrs = rtnh_attrs(rtnh);
+			struct nlattr *l;
 
 			nla_via = nla_find(attrs, attrlen, RTA_VIA);
 			nla_newdst = nla_find(attrs, attrlen, RTA_NEWDST);
+
+			l = nla_find(attrs, attrlen, RTA_LIMIT);
+			if (l) nh->nh_limit = nla_get_u32(l);
 		}
 
 		err = mpls_nh_build(cfg->rc_nlinfo.nl_net, rt, nh,
@@ -968,6 +1122,7 @@ static int mpls_route_add(struct mpls_route_config *cfg,
 	unsigned index;
 	u8 max_labels;
 	u8 nhs;
+	struct net_device *pw = NULL;
 
 	index = cfg->rc_label;
 
@@ -1017,6 +1172,19 @@ static int mpls_route_add(struct mpls_route_config *cfg,
 		goto errout;
 	}
 
+	if (cfg->rc_pw) {
+		pw = dev_get_by_index(net, cfg->rc_pw);
+		if (pw) {
+			dev_put(pw);
+			if (!is_mpls_pw(pw)) pw = NULL;
+		}
+		if (!pw) {
+			err = -EINVAL;
+			NL_SET_ERR_MSG(extack, "invalid pw device");
+			goto errout;
+		}
+	}
+
 	err = -ENOMEM;
 	rt = mpls_rt_alloc(nhs, max_via_alen, max_labels);
 	if (IS_ERR(rt)) {
@@ -1027,6 +1195,7 @@ static int mpls_route_add(struct mpls_route_config *cfg,
 	rt->rt_protocol = cfg->rc_protocol;
 	rt->rt_payload_type = cfg->rc_payload_type;
 	rt->rt_ttl_propagate = cfg->rc_ttl_propagate;
+	rt->rt_pw = pw;
 
 	if (cfg->rc_mp)
 		err = mpls_nh_build_multi(cfg, rt, max_labels, extack);
@@ -1505,6 +1674,11 @@ static void mpls_ifdown(struct net_device *dev, int event)
 		if (!rt)
 			continue;
 
+		if (event == NETDEV_UNREGISTER && rt->rt_pw == dev) {
+			mpls_route_update(net, index, NULL, NULL);
+			continue;
+		}
+
 		alive = 0;
 		deleted = 0;
 		change_nexthops(rt) {
@@ -1856,6 +2030,12 @@ static int rtm_to_route_config(struct sk_buff *skb,
 		case RTA_OIF:
 			cfg->rc_ifindex = nla_get_u32(nla);
 			break;
+		case RTA_PW:
+			cfg->rc_pw = nla_get_u32(nla);
+			break;
+		case RTA_LIMIT:
+			cfg->rc_limit = nla_get_u32(nla);
+			break;
 		case RTA_NEWDST:
 			if (nla_get_labels(nla, MAX_NEW_LABELS,
 					   &cfg->rc_output_labels,
@@ -1985,6 +2165,10 @@ static int mpls_dump_route(struct sk_buff *skb, u32 portid, u32 seq, int event,
 	if (nla_put_labels(skb, RTA_DST, 1, &label))
 		goto nla_put_failure;
 
+	if (rt->rt_pw) {
+		if (nla_put_u32(skb, RTA_PW, rt->rt_pw->ifindex))
+			goto nla_put_failure;
+	}
 	if (rt->rt_ttl_propagate != MPLS_TTL_PROP_DEFAULT) {
 		bool ttl_propagate =
 			rt->rt_ttl_propagate == MPLS_TTL_PROP_ENABLED;
@@ -2217,6 +2401,8 @@ static inline size_t lfib_nlmsg_size(struct mpls_route *rt)
 		NLMSG_ALIGN(sizeof(struct rtmsg))
 		+ nla_total_size(4)			/* RTA_DST */
 		+ nla_total_size(1);			/* RTA_TTL_PROPAGATE */
+
+	if (rt->rt_pw) payload += nla_total_size(4);
 
 	if (rt->rt_nhn == 1) {
 		struct mpls_nh *nh = rt->rt_nh;
@@ -2469,6 +2655,10 @@ static int mpls_getroute(struct sk_buff *in_skb, struct nlmsghdr *in_nlh,
 	if (nla_put_labels(skb, RTA_DST, 1, &in_label))
 		goto nla_put_failure;
 
+	if (rt->rt_pw) {
+		if (nla_put_u32(skb, RTA_PW, rt->rt_pw->ifindex))
+			goto nla_put_failure;
+	}
 	if (nh->nh_labels &&
 	    nla_put_labels(skb, RTA_NEWDST, nh->nh_labels,
 			   nh->nh_label))
@@ -2736,6 +2926,7 @@ static int __init mpls_init(void)
 	if (err)
 		goto out_unregister_pernet;
 
+	mpls_pw_init();
 	dev_add_pack(&mpls_packet_type);
 
 	rtnl_af_register(&mpls_af_ops);
@@ -2753,6 +2944,7 @@ static int __init mpls_init(void)
 	if (err)
 		pr_err("Can't add mpls over gre tunnel ops\n");
 
+	mpls_limit_init();
 	err = 0;
 out:
 	return err;
@@ -2765,9 +2957,11 @@ module_init(mpls_init);
 
 static void __exit mpls_exit(void)
 {
+	mpls_limit_exit();
 	rtnl_unregister_all(PF_MPLS);
 	rtnl_af_unregister(&mpls_af_ops);
 	dev_remove_pack(&mpls_packet_type);
+	mpls_pw_exit();
 	unregister_netdevice_notifier(&mpls_dev_notifier);
 	unregister_pernet_subsys(&mpls_net_ops);
 	ipgre_tunnel_encap_del_mpls_ops();

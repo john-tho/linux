@@ -10,6 +10,7 @@
 #include <linux/tcp.h>
 #include <linux/icmp.h>
 #include <linux/icmpv6.h>
+#include <asm/unaligned.h>
 
 #include <linux/dccp.h>
 #include <linux/sctp.h>
@@ -54,12 +55,13 @@ __udp_manip_pkt(struct sk_buff *skb,
 	}
 	if (do_csum) {
 		nf_csum_update(skb, iphdroff, &hdr->check, tuple, maniptype);
-		inet_proto_csum_replace2(&hdr->check, skb, *portptr, newport,
+		inet_proto_csum_replace2(&hdr->check, skb,
+					 get_unaligned(portptr), newport,
 					 false);
 		if (!hdr->check)
 			hdr->check = CSUM_MANGLED_0;
 	}
-	*portptr = newport;
+	put_unaligned(newport, portptr);
 }
 
 static bool udp_manip_pkt(struct sk_buff *skb,
@@ -170,8 +172,8 @@ tcp_manip_pkt(struct sk_buff *skb,
 		portptr = &hdr->dest;
 	}
 
-	oldport = *portptr;
-	*portptr = newport;
+	oldport = get_unaligned(portptr);
+	put_unaligned(newport, portptr);
 
 	if (hdrsize < sizeof(*hdr))
 		return true;

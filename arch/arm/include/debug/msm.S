@@ -6,6 +6,22 @@
  * Author: Brian Swetland <swetland@google.com>
  */
 
+#if 1
+	#define UART_SR         0xa4
+	#define UART_ISR        0xb4
+	#define UART_CR         0xa8
+#else
+	#define UART_SR         0x08
+	#define UART_ISR        0x14
+	#define UART_CR         0x10
+#endif
+
+#if 1
+	#define UARTDM_TF 0x100
+#else
+	#define UARTDM_TF 0x70
+#endif
+
 	.macro	addruart, rp, rv, tmp
 	ldr	\rp, =CONFIG_DEBUG_UART_PHYS
 	ldr	\rv, =CONFIG_DEBUG_UART_VIRT
@@ -14,17 +30,17 @@
 	.macro	senduart, rd, rx
 ARM_BE8(rev	\rd, \rd )
 	@ Write the 1 character to UARTDM_TF
-	str	\rd, [\rx, #0x70]
+	str	\rd, [\rx, #UARTDM_TF]
 	.endm
 
 	.macro	waituart, rd, rx
 	@ check for TX_EMT in UARTDM_SR
-	ldr	\rd, [\rx, #0x08]
+	ldr	\rd, [\rx, #UART_SR]
 ARM_BE8(rev     \rd, \rd )
 	tst	\rd, #0x08
 	bne	1002f
 	@ wait for TXREADY in UARTDM_ISR
-1001:	ldr	\rd, [\rx, #0x14]
+1001:	ldr	\rd, [\rx, #UART_ISR]
 ARM_BE8(rev     \rd, \rd )
 	tst	\rd, #0x80
 	beq 	1001b
@@ -32,13 +48,13 @@ ARM_BE8(rev     \rd, \rd )
 	@ Clear TX_READY by writing to the UARTDM_CR register
 	mov	\rd, #0x300
 ARM_BE8(rev     \rd, \rd )
-	str	\rd, [\rx, #0x10]
+	str	\rd, [\rx, #UART_CR]
 	@ Write 0x1 to NCF register
 	mov 	\rd, #0x1
 ARM_BE8(rev     \rd, \rd )
 	str	\rd, [\rx, #0x40]
 	@ UARTDM reg. Read to induce delay
-	ldr	\rd, [\rx, #0x08]
+	ldr	\rd, [\rx, #UART_SR]
 	.endm
 
 	.macro	busyuart, rd, rx

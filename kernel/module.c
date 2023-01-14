@@ -2125,7 +2125,7 @@ static void free_module_elf(struct module *mod)
 }
 #endif /* CONFIG_LIVEPATCH */
 
-void __weak module_memfree(void *module_region)
+void __weak module_memfree(void *module_region, unsigned size)
 {
 	/*
 	 * This memory may be RO, and freeing RO memory in an interrupt is not
@@ -2184,7 +2184,7 @@ static void free_module(struct module *mod)
 
 	/* This may be empty, but that's OK */
 	module_arch_freeing_init(mod);
-	module_memfree(mod->init_layout.base);
+	module_memfree(mod->init_layout.base, mod->init_layout.size);
 	kfree(mod->args);
 	percpu_modfree(mod);
 
@@ -2192,7 +2192,7 @@ static void free_module(struct module *mod)
 	lockdep_free_key_range(mod->core_layout.base, mod->core_layout.size);
 
 	/* Finally, free the core (containing the module structure) */
-	module_memfree(mod->core_layout.base);
+	module_memfree(mod->core_layout.base, mod->core_layout.size);
 }
 
 void *__symbol_get(const char *symbol)
@@ -3235,7 +3235,7 @@ static int move_module(struct module *mod, struct load_info *info)
 		 */
 		kmemleak_ignore(ptr);
 		if (!ptr) {
-			module_memfree(mod->core_layout.base);
+			module_memfree(mod->core_layout.base, mod->core_layout.size);
 			return -ENOMEM;
 		}
 		memset(ptr, 0, mod->init_layout.size);
@@ -3405,6 +3405,11 @@ static struct module *layout_and_allocate(struct load_info *info, int flags)
 	layout_sections(info->mod, info);
 	layout_symtab(info->mod, info);
 
+#ifdef __mips
+	module_relayout(info->hdr, info->sechdrs, info->secstrings,
+			info->index.sym, info->mod);
+#endif
+
 	/* Allocate and move to the final place */
 	err = move_module(info->mod, info);
 	if (err)
@@ -3421,8 +3426,8 @@ static void module_deallocate(struct module *mod, struct load_info *info)
 {
 	percpu_modfree(mod);
 	module_arch_freeing_init(mod);
-	module_memfree(mod->init_layout.base);
-	module_memfree(mod->core_layout.base);
+	module_memfree(mod->init_layout.base, mod->init_layout.size);
+	module_memfree(mod->core_layout.base, mod->core_layout.size);
 }
 
 int __weak module_finalize(const Elf_Ehdr *hdr,
@@ -3483,6 +3488,7 @@ static void do_mod_ctors(struct module *mod)
 struct mod_initfree {
 	struct llist_node node;
 	void *module_init;
+	unsigned init_size;
 };
 
 static void do_free_init(struct work_struct *w)
@@ -3496,7 +3502,7 @@ static void do_free_init(struct work_struct *w)
 
 	llist_for_each_safe(pos, n, list) {
 		initfree = container_of(pos, struct mod_initfree, node);
-		module_memfree(initfree->module_init);
+		module_memfree(initfree->module_init, initfree->init_size);
 		kfree(initfree);
 	}
 }
@@ -3526,6 +3532,7 @@ static noinline int do_init_module(struct module *mod)
 		goto fail;
 	}
 	freeinit->module_init = mod->init_layout.base;
+	freeinit->init_size = mod->init_layout.size;
 
 	/*
 	 * We want to find out whether @mod uses async during init.  Clear
@@ -4069,7 +4076,7 @@ void * __weak dereference_module_function_descriptor(struct module *mod,
 const char *module_address_lookup(unsigned long addr,
 			    unsigned long *size,
 			    unsigned long *offset,
-			    char **modname,
+			    struct module **modret,
 			    char *namebuf)
 {
 	const char *ret = NULL;
@@ -4078,8 +4085,8 @@ const char *module_address_lookup(unsigned long addr,
 	preempt_disable();
 	mod = __module_address(addr);
 	if (mod) {
-		if (modname)
-			*modname = mod->name;
+		if (modret)
+			*modret = mod;
 
 		ret = find_kallsyms_symbol(mod, addr, size, offset);
 	}
@@ -4482,6 +4489,7 @@ EXPORT_SYMBOL_GPL(__module_text_address);
 /* Don't grab lock, we're oopsing. */
 void print_modules(void)
 {
+#if 0
 	struct module *mod;
 	char buf[MODULE_FLAGS_BUF_SIZE];
 
@@ -4497,6 +4505,7 @@ void print_modules(void)
 	if (last_unloaded_module[0])
 		pr_cont(" [last unloaded: %s]", last_unloaded_module);
 	pr_cont("\n");
+#endif
 }
 
 #ifdef CONFIG_MODVERSIONS

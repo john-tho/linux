@@ -47,7 +47,7 @@ struct prefix_info {
 	__be32			reserved2;
 
 	struct in6_addr		prefix;
-};
+} __attribute__((packed));
 
 #include <linux/ipv6.h>
 #include <linux/netdevice.h>

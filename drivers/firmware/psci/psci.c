@@ -18,6 +18,7 @@
 #include <linux/reboot.h>
 #include <linux/slab.h>
 #include <linux/suspend.h>
+#include <linux/smp.h>
 
 #include <uapi/linux/psci.h>
 
@@ -99,7 +100,8 @@ static inline bool psci_has_ext_power_state(void)
 
 bool psci_has_osi_support(void)
 {
-	return psci_cpu_suspend_feature & PSCI_1_0_OS_INITIATED;
+	return !of_machine_is_compatible("qcom,ipq6018")
+	    && (psci_cpu_suspend_feature & PSCI_1_0_OS_INITIATED);
 }
 
 static inline bool psci_power_state_loses_context(u32 state)
@@ -278,6 +280,9 @@ static void psci_sys_reset(enum reboot_mode reboot_mode, const char *cmd)
 		 */
 		invoke_psci_fn(PSCI_FN_NATIVE(1_1, SYSTEM_RESET2), 0, 0, 0);
 	} else {
+		if (of_machine_is_compatible("qcom,ipq5018")) {
+			invoke_psci_fn(0x02000109, 2, 1, 0);
+		}
 		invoke_psci_fn(PSCI_0_2_FN_SYSTEM_RESET, 0, 0, 0);
 	}
 }
@@ -426,6 +431,10 @@ static void __init psci_init_smccc(void)
 
 }
 
+static void stupid_poweroff(void) {
+    while (1) { }
+}
+
 static void __init psci_0_2_set_functions(void)
 {
 	pr_info("Using standard PSCI v0.2 function IDs\n");
@@ -450,7 +459,15 @@ static void __init psci_0_2_set_functions(void)
 
 	arm_pm_restart = psci_sys_reset;
 
+	if (of_machine_is_compatible("marvell,armada3720")
+	    || of_machine_is_compatible("marvell,armada7040")
+	    || of_machine_is_compatible("qcom,ipq807x")) {
+	    /* For these chips poweroff is not implemented in ATF */
+	    pm_power_off = stupid_poweroff;
+	}
+	else {
 	pm_power_off = psci_sys_poweroff;
+	}
 }
 
 /*
@@ -612,3 +629,14 @@ int __init psci_acpi_init(void)
 	return psci_probe();
 }
 #endif
+
+void aarch64_boot_secondary(unsigned int cpu)
+{
+#ifndef CONFIG_ARM64
+	extern void secondary_startup(void);
+	extern void switch_to_aarch32_el1(void);
+	__invoke_psci_fn_smc(PSCI_0_2_FN_CPU_ON, cpu_logical_map(cpu),
+		__virt_to_phys((long unsigned int)&switch_to_aarch32_el1),
+		__virt_to_phys((long unsigned int)&secondary_startup));
+#endif
+}

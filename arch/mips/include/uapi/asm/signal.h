@@ -101,12 +101,19 @@ typedef unsigned long old_sigset_t;		/* at least 32 bits */
 
 #include <asm-generic/signal-defs.h>
 
+#if 0
 #ifndef __KERNEL__
 struct sigaction {
 	unsigned int	sa_flags;
-	__sighandler_t	sa_handler;
+	union {
+	  __sighandler_t _sa_handler;
+	  void (*_sa_sigaction)(int, struct siginfo *, void *);
+	} _u;
 	sigset_t	sa_mask;
 };
+#define sa_handler	_u._sa_handler
+#define sa_sigaction	_u._sa_sigaction
+#endif
 #endif
 
 /* IRIX compatible stack_t  */

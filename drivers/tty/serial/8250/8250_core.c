@@ -40,6 +40,15 @@
 
 #include <asm/irq.h>
 
+#ifdef CONFIG_MIPS_MIKROTIK
+#include <asm/bootinfo.h>
+#include <asm/rb/boards.h>
+#endif
+
+#if defined(CONFIG_ARM64) || defined(CONFIG_ARM)
+#include <linux/of.h>
+#endif
+
 #include "8250.h"
 
 /*
@@ -558,6 +567,7 @@ static void __init serial8250_isa_init_ports(void)
 static void __init
 serial8250_register_ports(struct uart_driver *drv, struct device *dev)
 {
+#ifndef CONFIG_ARM	
 	int i;
 
 	for (i = 0; i < nr_uarts; i++) {
@@ -574,6 +584,7 @@ serial8250_register_ports(struct uart_driver *drv, struct device *dev)
 		serial8250_apply_quirks(up);
 		uart_add_one_port(drv, &up->port);
 	}
+#endif	
 }
 
 #ifdef CONFIG_SERIAL_8250_CONSOLE
@@ -1150,6 +1161,24 @@ static int __init serial8250_init(void)
 		return -ENODEV;
 
 	serial8250_isa_init_ports();
+
+#ifdef CONFIG_MIPS_MIKROTIK
+	if (mips_machtype == MACH_MT_RB951) return -1;
+	if (mips_machtype == MACH_MT_CM2N) return -1;
+	if (mips_machtype == MACH_MT_mAP) return -1;
+#endif
+
+#if defined(CONFIG_ARM64)
+	if (of_machine_is_compatible("marvell,armada3720")
+	 || of_machine_is_compatible("qcom,ipq807x")
+	 || of_machine_is_compatible("qcom,ipq6018")) {
+	    return -1;
+	}
+#endif
+#if defined(CONFIG_ARM)
+	if (of_machine_is_compatible("qcom,mdm9607")) return -1;
+	if (of_machine_is_compatible("qcom,sdxprairie")) return -1;
+#endif
 
 	pr_info("Serial: 8250/16550 driver, %d ports, IRQ sharing %sabled\n",
 		nr_uarts, share_irqs ? "en" : "dis");

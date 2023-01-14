@@ -731,7 +731,6 @@ found:
 		 * handler(include defer_bh).
 		 */
 		usb_get_urb(urb);
-		spin_unlock_irqrestore(&q->lock, flags);
 		// during some PM-driven resume scenarios,
 		// these (async) unlinks complete immediately
 		retval = usb_unlink_urb (urb);
@@ -740,7 +739,6 @@ found:
 		else
 			count++;
 		usb_put_urb(urb);
-		spin_lock_irqsave(&q->lock, flags);
 	}
 	spin_unlock_irqrestore (&q->lock, flags);
 	return count;

@@ -112,6 +112,15 @@ static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
 	if (veth->h_vlan_proto != vlan->vlan_proto ||
 	    vlan->flags & VLAN_FLAG_REORDER_HDR) {
 		u16 vlan_tci;
+		{
+			struct net_device *rd = vlan->real_dev;
+			if (!skb_is_gso(skb) && rd->l2mtu
+			    && (skb->len - ETH_HLEN + VLAN_HLEN) > rd->l2mtu) {
+				this_cpu_inc(vlan->vlan_pcpu_stats->tx_dropped);
+				kfree_skb(skb);
+				return NETDEV_TX_OK;
+			}
+		}
 		vlan_tci = vlan->vlan_id;
 		vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb->priority);
 		__vlan_hwaccel_put_tag(skb, vlan->vlan_proto, vlan_tci);
@@ -146,8 +155,11 @@ static int vlan_dev_change_mtu(struct net_device *dev, int new_mtu)
 
 	if (netif_reduces_vlan_mtu(real_dev))
 		max_mtu -= VLAN_HLEN;
-	if (max_mtu < new_mtu)
+	if (real_dev->l2mtu == 0 && max_mtu < new_mtu)
 		return -ERANGE;
+	if (dev->l2mtu && new_mtu > dev->l2mtu) {
+		return -ERANGE;
+	}
 
 	dev->mtu = new_mtu;
 
@@ -295,6 +307,7 @@ static int vlan_dev_open(struct net_device *dev)
 	if (netif_carrier_ok(real_dev) &&
 	    !(vlan->flags & VLAN_FLAG_BRIDGE_BINDING))
 		netif_carrier_on(dev);
+	netif_tx_start_all_queues(dev);
 	return 0;
 
 clear_allmulti:
@@ -313,6 +326,7 @@ static int vlan_dev_stop(struct net_device *dev)
 	struct vlan_dev_priv *vlan = vlan_dev_priv(dev);
 	struct net_device *real_dev = vlan->real_dev;
 
+	netif_tx_stop_all_queues(dev);
 	dev_mc_unsync(real_dev, dev);
 	dev_uc_unsync(real_dev, dev);
 	if (dev->flags & IFF_ALLMULTI)
@@ -567,13 +581,18 @@ static int vlan_dev_init(struct net_device *dev)
 #endif
 
 	dev->needed_headroom = real_dev->needed_headroom;
-	if (vlan_hw_offload_capable(real_dev->features, vlan->vlan_proto)) {
+#if 0
+	if (vlan_hw_offload_capable(real_dev->features,
+				    vlan_dev_priv(dev)->vlan_proto)) {
 		dev->header_ops      = &vlan_passthru_header_ops;
 		dev->hard_header_len = real_dev->hard_header_len;
 	} else {
 		dev->header_ops      = &vlan_header_ops;
 		dev->hard_header_len = real_dev->hard_header_len + VLAN_HLEN;
 	}
+#endif
+	dev->header_ops      = real_dev->header_ops;
+	dev->hard_header_len = real_dev->hard_header_len + VLAN_HLEN;
 
 	dev->netdev_ops = &vlan_netdev_ops;
 
@@ -790,6 +809,8 @@ static void vlan_dev_free(struct net_device *dev)
 
 	free_percpu(vlan->vlan_pcpu_stats);
 	vlan->vlan_pcpu_stats = NULL;
+	
+	module_put(THIS_MODULE);
 }
 
 void vlan_setup(struct net_device *dev)

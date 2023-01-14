@@ -1257,6 +1257,11 @@ MODULE_LICENSE ("GPL");
 #define PS3_SYSTEM_BUS_DRIVER	ps3_ohci_driver
 #endif
 
+#ifdef CONFIG_MIPS_MIKROTIK
+#include "ohci-rb400.c"
+#define PLATFORM_DRIVER		ohci_hcd_rb400_driver
+#endif
+
 #ifdef CONFIG_MFD_SM501
 #include "ohci-sm501.c"
 #define SM501_OHCI_DRIVER	ohci_hcd_sm501_driver
@@ -1265,6 +1270,11 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_MFD_TC6393XB
 #include "ohci-tmio.c"
 #define TMIO_OHCI_DRIVER	ohci_hcd_tmio_driver
+#endif
+
+#ifdef CONFIG_TILE_USB
+#include "ohci-tilegx.c"
+#define PLATFORM_DRIVER		ohci_hcd_tilegx_driver
 #endif
 
 static int __init ohci_hcd_mod_init(void)

@@ -128,6 +128,7 @@
 #define     LTSSM_MASK				0x3f
 #define     LTSSM_L0				0x10
 #define     RC_BAR_CONFIG			0x300
+#define DEBUG_MUX_CTRL				(LMI_BASE_ADDR + 0x208)
 
 /* PCIe core controller registers */
 #define CTRL_CORE_BASE_ADDR			0x18000
@@ -337,6 +338,10 @@ static void advk_pcie_setup_hw(struct advk_pcie *pcie)
 	reg = advk_readl(pcie, PIO_CTRL);
 	reg |= PIO_CTRL_ADDR_WIN_DISABLE;
 	advk_writel(pcie, reg, PIO_CTRL);
+
+	reg = advk_readl(pcie, DEBUG_MUX_CTRL);
+	reg |= BIT(30);
+	advk_writel(pcie, reg, DEBUG_MUX_CTRL);
 
 	/*
 	 * PERST# signal could have been asserted by pinctrl subsystem before
@@ -1025,6 +1030,7 @@ static int advk_pcie_probe(struct platform_device *pdev)
 
 static const struct of_device_id advk_pcie_of_match_table[] = {
 	{ .compatible = "marvell,armada-3700-pcie", },
+	{ .compatible = "marvell,armada-37xx-pcie", },
 	{},
 };
 

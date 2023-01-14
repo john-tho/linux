@@ -34,6 +34,8 @@ bool fib_rule_matchall(const struct fib_rule *rule)
 		return false;
 	if (fib_rule_port_range_set(&rule->dport_range))
 		return false;
+	if (rule->action == FR_ACT_FWMARK_TBL)
+		return false;
 	return true;
 }
 EXPORT_SYMBOL_GPL(fib_rule_matchall);
@@ -48,7 +50,8 @@ int fib_default_rule_add(struct fib_rules_ops *ops,
 		return -ENOMEM;
 
 	refcount_set(&r->refcnt, 1);
-	r->action = FR_ACT_TO_TBL;
+	if (table == RT_TABLE_UNSPEC) r->action = FR_ACT_FWMARK_TBL;
+	else r->action = FR_ACT_TO_TBL;
 	r->pref = pref;
 	r->table = table;
 	r->flags = flags;
@@ -255,6 +258,9 @@ static int fib_rule_match(struct fib_rule *rule, struct fib_rules_ops *ops,
 		goto out;
 
 	if ((rule->mark ^ fl->flowi_mark) & rule->mark_mask)
+		goto out;
+
+	if (rule->action == FR_ACT_FWMARK_TBL && !(fl->flowi_mark & 0xffff))
 		goto out;
 
 	if (rule->tun_id && (rule->tun_id != fl->flowi_tun_key.tun_id))
@@ -1139,6 +1145,8 @@ skip:
 	return skb->len;
 }
 
+DEFINE_STATIC_KEY_FALSE(policy_routing);
+EXPORT_SYMBOL_GPL(policy_routing);
 static void notify_rule_change(int event, struct fib_rule *rule,
 			       struct fib_rules_ops *ops, struct nlmsghdr *nlh,
 			       u32 pid)
@@ -1147,6 +1155,12 @@ static void notify_rule_change(int event, struct fib_rule *rule,
 	struct sk_buff *skb;
 	int err = -ENOBUFS;
 
+	if (event == RTM_NEWRULE) {
+		static_branch_inc(&policy_routing);
+	}
+	else {
+		static_branch_dec(&policy_routing);
+	}
 	net = ops->fro_net;
 	skb = nlmsg_new(fib_rule_nlmsg_size(ops, rule), GFP_KERNEL);
 	if (skb == NULL)
@@ -1249,6 +1263,7 @@ static struct pernet_operations fib_rules_net_ops = {
 static int __init fib_rules_init(void)
 {
 	int err;
+	static_branch_inc(&policy_routing);
 	rtnl_register(PF_UNSPEC, RTM_NEWRULE, fib_nl_newrule, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_DELRULE, fib_nl_delrule, NULL, 0);
 	rtnl_register(PF_UNSPEC, RTM_GETRULE, NULL, fib_nl_dumprule, 0);

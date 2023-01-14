@@ -50,7 +50,7 @@
 #define _UAPI_LIBC_COMPAT_H
 
 /* We have included glibc headers... */
-#if defined(__GLIBC__)
+#if defined(__GLIBC__) || 1
 
 /* Coordinate with glibc net/if.h header. */
 #if defined(_NET_IF_H) && defined(__USE_MISC)

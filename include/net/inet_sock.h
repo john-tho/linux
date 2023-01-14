@@ -53,7 +53,7 @@ struct ip_options {
 	unsigned char	cipso;
 	unsigned char	__pad2;
 	unsigned char	__data[0];
-};
+} __attribute__((packed));
 
 struct ip_options_rcu {
 	struct rcu_head rcu;

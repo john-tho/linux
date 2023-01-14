@@ -37,6 +37,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_dma.h>
+#include <linux/of_device.h>
 #include <linux/circ_buf.h>
 #include <linux/clk.h>
 #include <linux/dmaengine.h>
@@ -1242,7 +1243,9 @@ static int bam_dma_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Unsupported BAM module\n");
 		return -ENODEV;
 	}
-
+#ifdef __aarch64__
+	of_dma_configure(&pdev->dev, pdev->dev.of_node, true);
+#endif
 	bdev->layout = match->data;
 
 	iores = platform_get_resource(pdev, IORESOURCE_MEM, 0);

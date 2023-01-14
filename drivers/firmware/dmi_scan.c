@@ -207,6 +207,7 @@ static void __init dmi_save_uuid(const struct dmi_header *dm, int slot,
 	if (!s)
 		return;
 
+#if 0	/* NOTE: we need old behaviour to preserve compatability */
 	/*
 	 * As of version 2.6 of the SMBIOS specification, the first 3 fields of
 	 * the UUID are supposed to be little-endian encoded.  The specification
@@ -215,6 +216,7 @@ static void __init dmi_save_uuid(const struct dmi_header *dm, int slot,
 	if (dmi_ver >= 0x020600)
 		sprintf(s, "%pUl", d);
 	else
+#endif	    
 		sprintf(s, "%pUb", d);
 
 	dmi_ident[slot] = s;

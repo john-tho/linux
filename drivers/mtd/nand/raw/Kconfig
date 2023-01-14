@@ -168,6 +168,54 @@ config MTD_NAND_ATMEL
 	  Enables support for NAND Flash / Smart Media Card interface
 	  on Atmel AT91 processors.
 
+config MTD_NAND_RB400
+	bool "Support for RB400 nand"
+	depends on MIPS_MIKROTIK && SPI_RB400
+	select MTD_NAND_RB
+
+config MTD_NAND_RB_PPC
+	bool "Support for RB333/RB600/RB1000 nand"
+	depends on RB_PPC || RB1000
+	select MTD_NAND_RB
+
+config MTD_NAND_RB1200
+	bool "Support for RB1200 nand"
+	depends on 44x
+	select MTD_NAND_RB
+
+config MTD_NAND_RB_FCM
+	bool "Support for RB1100AHx2 nand"
+	depends on RB1000 || RB1120
+	select MTD_NAND_RB
+
+config MTD_NAND_TILERA
+	bool "Support for tilera nand"
+	depends on TILE_GXIO_GPIO
+	select MTD_NAND_RB
+
+config MTD_NAND_RB
+	tristate
+
+config MTD_NAND_AL
+	bool "NAND support for Annapurna Labs NAND controller"
+	select MTD_NAND_RB
+	help
+	  Enable support for NAND Flash chips on Annapurna Labs NAND controllers.
+
+config MTD_MSM_QPIC_NAND
+	tristate "MSM QPIC NAND Device Support"
+	depends on MTD && (ARCH_MSM || ARCH_QCOM) && !MTD_MSM_NAND
+	select CRC16
+	select BITREVERSE
+	select MTD_NAND_IDS
+	select MTD_NAND_RB
+	default n
+	help
+	  Support for NAND controller in Qualcomm Parallel Interface
+	  controller (QPIC). This new controller supports BAM mode
+	  and BCH error correction mechanism. Based on the device
+	  capabilities either 4 bit or 8 bit BCH ECC will be used.
+
 config MTD_NAND_ORION
 	tristate "Marvell Orion NAND controller"
 	depends on PLAT_ORION

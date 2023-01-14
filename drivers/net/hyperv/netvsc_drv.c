@@ -44,7 +44,7 @@
 #define LINKCHANGE_INT (2 * HZ)
 #define VF_TAKEOVER_INT (HZ / 10)
 
-static unsigned int ring_size __ro_after_init = 128;
+static unsigned int ring_size __ro_after_init = RING_SIZE_MIN;
 module_param(ring_size, uint, 0444);
 MODULE_PARM_DESC(ring_size, "Ring buffer size (# of pages)");
 unsigned int netvsc_ring_bytes __ro_after_init;
@@ -925,8 +925,16 @@ int netvsc_recv_callback(struct net_device *net,
 static void netvsc_get_drvinfo(struct net_device *net,
 			       struct ethtool_drvinfo *info)
 {
+	struct net_device_context *net_device_ctx;
+	struct hv_device *hv_dev;
+
 	strlcpy(info->driver, KBUILD_MODNAME, sizeof(info->driver));
 	strlcpy(info->fw_version, "N/A", sizeof(info->fw_version));
+
+	net_device_ctx = netdev_priv(net);
+	hv_dev = net_device_ctx->device_ctx;
+	memcpy(info->bus_info, dev_name(&hv_dev->device), 18);
+	info->bus_info[18] = 0;
 }
 
 static void netvsc_get_channels(struct net_device *net,

@@ -21,6 +21,7 @@
 #include <linux/device.h>
 #include <linux/hyperv.h>
 #include <linux/blkdev.h>
+#include <linux/crash_dump.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
 #include <scsi/scsi_host.h>
@@ -1997,6 +1998,9 @@ static struct fc_function_template fc_transport_functions = {
 static int __init storvsc_drv_init(void)
 {
 	int ret;
+
+	if (is_kdump_kernel())
+		return 0;
 
 	/*
 	 * Divide the ring buffer data size (which is 1 page less

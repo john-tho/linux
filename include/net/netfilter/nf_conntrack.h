@@ -100,6 +100,12 @@ struct nf_conn {
 	u_int32_t secmark;
 #endif
 
+	struct {
+		unsigned proto;
+		unsigned int data_len;
+		char *data;
+	} layer7;
+
 	/* Extensions */
 	struct nf_ct_ext *ext;
 
@@ -178,6 +184,8 @@ void *nf_ct_alloc_hashtable(unsigned int *sizep, int nulls);
 
 int nf_conntrack_hash_check_insert(struct nf_conn *ct);
 bool nf_ct_delete(struct nf_conn *ct, u32 pid, int report);
+
+void nf_conntrack_change_ip(unsigned old_ip, unsigned new_ip);
 
 bool nf_ct_get_tuplepr(const struct sk_buff *skb, unsigned int nhoff,
 		       u_int16_t l3num, struct net *net,

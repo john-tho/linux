@@ -330,8 +330,12 @@ int dw_pcie_host_init(struct pcie_port *pp)
 
 	raw_spin_lock_init(&pci->pp.lock);
 
+	pp->is_dk = of_machine_is_compatible("qcom,ipq4019");
 	cfg_res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "config");
 	if (cfg_res) {
+		if (pp->is_dk)
+			pp->cfg0_size = resource_size(cfg_res);
+		else
 		pp->cfg0_size = resource_size(cfg_res) >> 1;
 		pp->cfg1_size = resource_size(cfg_res) >> 1;
 		pp->cfg0_base = cfg_res->start;
@@ -527,7 +531,10 @@ static int dw_pcie_access_other_conf(struct pcie_port *pp, struct pci_bus *bus,
 	busdev = PCIE_ATU_BUS(bus->number) | PCIE_ATU_DEV(PCI_SLOT(devfn)) |
 		 PCIE_ATU_FUNC(PCI_FUNC(devfn));
 
-	if (bus->parent->number == pp->root_bus_nr) {
+	if (pp->is_dk || bus->parent->number == pp->root_bus_nr) {
+		if (pp->is_dk && bus->parent->number != pp->root_bus_nr)
+			type = PCIE_ATU_TYPE_CFG1;
+		else
 		type = PCIE_ATU_TYPE_CFG0;
 		cpu_addr = pp->cfg0_base;
 		cfg_size = pp->cfg0_size;

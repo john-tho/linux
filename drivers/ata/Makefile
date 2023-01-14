@@ -27,6 +27,10 @@ obj-$(CONFIG_AHCI_TEGRA)	+= ahci_tegra.o libahci.o libahci_platform.o
 obj-$(CONFIG_AHCI_XGENE)	+= ahci_xgene.o libahci.o libahci_platform.o
 obj-$(CONFIG_AHCI_QORIQ)	+= ahci_qoriq.o libahci.o libahci_platform.o
 
+ifdef CONFIG_ARCH_ALPINE
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+endif
+
 # SFF w/ custom DMA
 obj-$(CONFIG_PDC_ADMA)		+= pdc_adma.o
 obj-$(CONFIG_PATA_ARASAN_CF)	+= pata_arasan_cf.o
@@ -113,6 +117,8 @@ obj-$(CONFIG_PATA_RZ1000)	+= pata_rz1000.o
 obj-$(CONFIG_PATA_SAMSUNG_CF)	+= pata_samsung_cf.o
 
 obj-$(CONFIG_PATA_PXA)		+= pata_pxa.o
+
+obj-$(CONFIG_PATA_RBPPC)	+= pata_rb_ppc.o
 
 # Should be last but two libata driver
 obj-$(CONFIG_PATA_ACPI)		+= pata_acpi.o

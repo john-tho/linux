@@ -626,11 +626,11 @@ void netvsc_device_remove(struct hv_device *device)
 	 * receive buffer GPADL. Do the same for send buffer.
 	 */
 	netvsc_revoke_recv_buf(device, net_device, ndev);
-	if (vmbus_proto_version < VERSION_WIN10)
+	if (vmbus_proto_version < VERSION_WIN10_V4_1)
 		netvsc_teardown_recv_gpadl(device, net_device, ndev);
 
 	netvsc_revoke_send_buf(device, net_device, ndev);
-	if (vmbus_proto_version < VERSION_WIN10)
+	if (vmbus_proto_version < VERSION_WIN10_V4_1)
 		netvsc_teardown_send_gpadl(device, net_device, ndev);
 
 	RCU_INIT_POINTER(net_device_ctx->nvdev, NULL);
@@ -652,7 +652,7 @@ void netvsc_device_remove(struct hv_device *device)
 	 * If host is Win2016 or higher then we do the GPADL tear down
 	 * here after VMBus is closed.
 	*/
-	if (vmbus_proto_version >= VERSION_WIN10) {
+	if (vmbus_proto_version >= VERSION_WIN10_V4_1) {
 		netvsc_teardown_recv_gpadl(device, net_device, ndev);
 		netvsc_teardown_send_gpadl(device, net_device, ndev);
 	}

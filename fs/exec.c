@@ -272,6 +272,9 @@ static int __bprm_mm_init(struct linux_binprm *bprm)
 		goto err;
 
 	mm->stack_vm = mm->total_vm = 1;
+#ifdef CONFIG_HOMECACHE
+	arch_exec_vma(vma);
+#endif
 	up_write(&mm->mmap_sem);
 	bprm->p = vma->vm_end - sizeof(void *);
 	return 0;
@@ -702,10 +705,10 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	unsigned long rlim_stack;
 
 #ifdef CONFIG_STACK_GROWSUP
-	/* Limit stack size */
+	/* Limit stack size to 1GB */
 	stack_base = bprm->rlim_stack.rlim_max;
-	if (stack_base > STACK_SIZE_MAX)
-		stack_base = STACK_SIZE_MAX;
+	if (stack_base > (1 << 30))
+		stack_base = 1 << 30;
 
 	/* Add space for stack randomization. */
 	stack_base += (STACK_RND_MASK << PAGE_SHIFT);
@@ -798,6 +801,10 @@ int setup_arg_pages(struct linux_binprm *bprm,
 	if (ret)
 		ret = -EFAULT;
 
+#ifdef CONFIG_HOMECACHE
+	/* Repeat the call to reset vm_flags, if necessary */
+	arch_exec_vma(vma);
+#endif
 out_unlock:
 	up_write(&mm->mmap_sem);
 	return ret;
@@ -1713,6 +1720,37 @@ static int exec_binprm(struct linux_binprm *bprm)
 	return ret;
 }
 
+#ifdef CONFIG_HOMECACHE
+static void homecache_env(struct user_arg_ptr envp)
+{
+	char buf[64];
+	char *val = NULL;
+	int i;
+
+	for (i = 0; ; ++i) {
+		int len;
+		const char __user *str = get_user_arg_ptr(envp, i);
+
+		if (str == NULL)
+			break;     /* Corrupt envp array, or end of array. */
+		len = strnlen_user(str, sizeof(buf));
+		if (len > sizeof(buf))
+			continue;  /* Too long; ignore. */
+		if (len == 0 || _copy_from_user(buf, str, len))
+			break;     /* Corrupt envp[] pointer; give up. */
+
+		/* See if it is the one we're interested in. */
+		if (strncmp(buf, "LD_CACHE_HASH=",
+			    sizeof("LD_CACHE_HASH")) == 0) {
+			val = &buf[sizeof("LD_CACHE_HASH")];
+			break;
+		}
+	}
+
+	arch_exec_env(val);
+}
+#endif
+
 /*
  * sys_execve() executes a new program.
  */
@@ -1768,6 +1806,9 @@ static int __do_execve_file(int fd, struct filename *filename,
 		goto out_unmark;
 
 	sched_exec();
+#ifdef CONFIG_HOMECACHE
+	homecache_env(envp);
+#endif
 
 	bprm->file = file;
 	if (!filename) {

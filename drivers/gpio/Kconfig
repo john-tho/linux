@@ -378,7 +378,7 @@ config GPIO_MPC8XXX
 
 config GPIO_MT7621
 	bool "Mediatek MT7621 GPIO Support"
-	depends on SOC_MT7620 || SOC_MT7621 || COMPILE_TEST
+	depends on SOC_MT7620 || SOC_MT7621 || MIPS_MIKROTIK || COMPILE_TEST
 	depends on OF_GPIO
 	select GPIO_GENERIC
 	select GPIOLIB_IRQCHIP
@@ -386,8 +386,9 @@ config GPIO_MT7621
 	  Say yes here to support the Mediatek MT7621 SoC GPIO device
 
 config GPIO_MVEBU
+	bool "Marvell gpio driver (MVEBU)"
 	def_bool y
-	depends on PLAT_ORION || ARCH_MVEBU
+	depends on PLAT_ORION || ARCH_MVEBU || MIPS_MIKROTIK
 	depends on OF_GPIO
 	select GENERIC_IRQ_CHIP
 	select REGMAP_MMIO
@@ -1506,6 +1507,14 @@ config GPIO_XRA1403
 	select REGMAP_SPI
 	help
 	  GPIO driver for EXAR XRA1403 16-bit SPI-based GPIO expander.
+
+config GPIO_MIKROTIK_SPI
+	bool "GPIO using shift registers for RouterBoards"
+	depends on SPI_MASTER
+	depends on ARM
+	help
+	  SPI driver for RouterBoards that extends number of GPIO pins
+	  using serial-in/parallel-out and parallel-in/serial-out shift registers.
 
 config GPIO_MOXTET
 	tristate "Turris Mox Moxtet bus GPIO expander"

@@ -47,6 +47,8 @@ static int enable_mq = 1;
 
 static void
 vmxnet3_write_mac_addr(struct vmxnet3_adapter *adapter, u8 *mac);
+static void
+vmxnet3_destructor(struct net_device *netdev);
 
 /*
  *    Enable/Disable the given intr
@@ -2058,6 +2060,43 @@ vmxnet3_netpoll(struct net_device *netdev)
 }
 #endif	/* CONFIG_NET_POLL_CONTROLLER */
 
+static void balance_irqs(struct vmxnet3_adapter *adapter)
+{
+	struct vmxnet3_intr *intr = &adapter->intr;
+	cpumask_t *mask;
+	int vector;
+	int i;
+
+	if (adapter->share_intr == VMXNET3_INTR_TXSHARE
+		    || adapter->num_tx_queues == 1)
+		goto set_rx;
+
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		vector = adapter->tx_queue[i].comp_ring.intr_idx;
+		mask = &intr->affinity_masks[vector];
+
+		cpumask_clear(mask);
+		cpumask_set_cpu(i % num_online_cpus(), mask);
+
+		irq_set_affinity_hint(intr->msix_entries[vector].vector, mask);
+	}
+
+set_rx:
+	if (adapter->share_intr == VMXNET3_INTR_BUDDYSHARE
+		    || adapter->num_rx_queues == 1)
+		return;
+
+	for (i = 0; i < adapter->num_rx_queues; i++) {
+		vector = adapter->rx_queue[i].comp_ring.intr_idx;
+		mask = &intr->affinity_masks[vector];
+
+		cpumask_clear(mask);
+		cpumask_set_cpu(i % num_online_cpus(), mask);
+
+		irq_set_affinity_hint(intr->msix_entries[vector].vector, mask);
+	}
+}
+
 static int
 vmxnet3_request_irqs(struct vmxnet3_adapter *adapter)
 {
@@ -2070,7 +2109,7 @@ vmxnet3_request_irqs(struct vmxnet3_adapter *adapter)
 		for (i = 0; i < adapter->num_tx_queues; i++) {
 			if (adapter->share_intr != VMXNET3_INTR_BUDDYSHARE) {
 				sprintf(adapter->tx_queue[i].name, "%s-tx-%d",
-					adapter->netdev->name, vector);
+					adapter->netdev->name, i);
 				err = request_irq(
 					      intr->msix_entries[vector].vector,
 					      vmxnet3_msix_tx, 0,
@@ -2078,7 +2117,7 @@ vmxnet3_request_irqs(struct vmxnet3_adapter *adapter)
 					      &adapter->tx_queue[i]);
 			} else {
 				sprintf(adapter->tx_queue[i].name, "%s-rxtx-%d",
-					adapter->netdev->name, vector);
+					adapter->netdev->name, i);
 			}
 			if (err) {
 				dev_err(&adapter->netdev->dev,
@@ -2107,10 +2146,10 @@ vmxnet3_request_irqs(struct vmxnet3_adapter *adapter)
 		for (i = 0; i < adapter->num_rx_queues; i++) {
 			if (adapter->share_intr != VMXNET3_INTR_BUDDYSHARE)
 				sprintf(adapter->rx_queue[i].name, "%s-rx-%d",
-					adapter->netdev->name, vector);
+					adapter->netdev->name, i);
 			else
 				sprintf(adapter->rx_queue[i].name, "%s-rxtx-%d",
-					adapter->netdev->name, vector);
+					adapter->netdev->name, i);
 			err = request_irq(intr->msix_entries[vector].vector,
 					  vmxnet3_msix_rx, 0,
 					  adapter->rx_queue[i].name,
@@ -2170,6 +2209,7 @@ vmxnet3_request_irqs(struct vmxnet3_adapter *adapter)
 			adapter->rx_queue[0].comp_ring.intr_idx = 0;
 		}
 
+		balance_irqs(adapter);
 		netdev_info(adapter->netdev,
 			    "intr type %u, mode %u, %u vectors allocated\n",
 			    intr->type, intr->mask_mode, intr->num_intrs);
@@ -2193,6 +2233,8 @@ vmxnet3_free_irqs(struct vmxnet3_adapter *adapter)
 
 		if (adapter->share_intr != VMXNET3_INTR_BUDDYSHARE) {
 			for (i = 0; i < adapter->num_tx_queues; i++) {
+				irq_set_affinity_hint(intr->msix_entries[vector].vector,
+						      NULL);
 				free_irq(intr->msix_entries[vector++].vector,
 					 &(adapter->tx_queue[i]));
 				if (adapter->share_intr == VMXNET3_INTR_TXSHARE)
@@ -2201,6 +2243,8 @@ vmxnet3_free_irqs(struct vmxnet3_adapter *adapter)
 		}
 
 		for (i = 0; i < adapter->num_rx_queues; i++) {
+			irq_set_affinity_hint(intr->msix_entries[vector].vector,
+					      NULL);
 			free_irq(intr->msix_entries[vector++].vector,
 				 &(adapter->rx_queue[i]));
 		}
@@ -3295,6 +3339,9 @@ vmxnet3_probe_device(struct pci_dev *pdev,
 	if (!netdev)
 		return -ENOMEM;
 
+	netdev->needs_free_netdev = true;
+	netdev->priv_destructor = vmxnet3_destructor;
+
 	pci_set_drvdata(pdev, netdev);
 	adapter = netdev_priv(netdev);
 	adapter->netdev = netdev;
@@ -3532,9 +3579,11 @@ err_set_mask:
 
 
 static void
-vmxnet3_remove_device(struct pci_dev *pdev)
+vmxnet3_destructor(struct net_device *netdev)
 {
-	struct net_device *netdev = pci_get_drvdata(pdev);
+	if (netdev->reg_state == NETREG_UNINITIALIZED)
+		return;
+
 	struct vmxnet3_adapter *adapter = netdev_priv(netdev);
 	int size = 0;
 	int num_rx_queues;
@@ -3547,10 +3596,7 @@ vmxnet3_remove_device(struct pci_dev *pdev)
 #endif
 		num_rx_queues = 1;
 	num_rx_queues = rounddown_pow_of_two(num_rx_queues);
-
 	cancel_work_sync(&adapter->work);
-
-	unregister_netdev(netdev);
 
 	vmxnet3_free_intr_resources(adapter);
 	vmxnet3_free_pci_resources(adapter);
@@ -3575,7 +3621,14 @@ vmxnet3_remove_device(struct pci_dev *pdev)
 			  adapter->shared, adapter->shared_pa);
 	dma_unmap_single(&adapter->pdev->dev, adapter->adapter_pa,
 			 sizeof(struct vmxnet3_adapter), PCI_DMA_TODEVICE);
-	free_netdev(netdev);
+
+}
+
+static void
+vmxnet3_remove_device(struct pci_dev *pdev)
+{
+	struct net_device *netdev = pci_get_drvdata(pdev);
+	unregister_netdev(netdev);
 }
 
 static void vmxnet3_shutdown_device(struct pci_dev *pdev)

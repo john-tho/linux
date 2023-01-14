@@ -22,6 +22,10 @@
 #include <linux/page-flags.h>
 #include <asm/page.h>
 
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
+
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER 11
@@ -454,6 +458,14 @@ struct zone {
 #endif
 	struct pglist_data	*zone_pgdat;
 	struct per_cpu_pageset __percpu *pageset;
+#ifdef CONFIG_HOMECACHE
+        /* Lists of free homecacheable pages */
+        struct homecache_list   homecache_list[NR_ZONE_HOMECACHE_LISTS];
+        /* Number of homecacheable pages in this zone */
+        unsigned long           homecache_count;
+        /* Last list we looked in for free pages of arbitrary home */
+        int                     lru_homecache_list;
+#endif
 
 #ifndef CONFIG_SPARSEMEM
 	/*

@@ -269,6 +269,18 @@ config HW_RANDOM_NOMADIK
 
 	  If unsure, say Y.
 
+config HW_RANDOM_TILE
+	tristate "Tilera Gx Random Number Generator support"
+	depends on HW_RANDOM && TILE_GXIO
+	---help---
+	  This driver provides kernel-side support for the Random Number
+	  Generator hardware found on the TILE-Gx processor family.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tile-rng.
+
+	  If unsure, say Y.
+
 config HW_RANDOM_PSERIES
 	tristate "pSeries HW Random Number Generator support"
 	depends on PPC64 && IBMVIO

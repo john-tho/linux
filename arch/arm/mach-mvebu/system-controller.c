@@ -87,6 +87,9 @@ static const struct of_device_id of_system_controller_table[] = {
 	}, {
 		.compatible = "marvell,armada-375-system-controller",
 		.data = (void *) &armada_375_system_controller,
+	}, {
+		.compatible = "marvell,msys-system-controller",
+		.data = (void *) &armada_370_xp_system_controller,
 	},
 	{ /* end of list */ },
 };

@@ -815,7 +815,9 @@ static int armada_37xx_gpiochip_register(struct platform_device *pdev,
 	gc = &info->gpio_chip;
 	gc->ngpio = info->data->nr_pins;
 	gc->parent = &pdev->dev;
+	if (of_property_read_u32(np, "gpiobase", &gc->base)) {
 	gc->base = -1;
+	}
 	gc->of_node = np;
 	gc->label = info->data->name;
 

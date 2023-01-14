@@ -905,8 +905,9 @@ static inline void spin_lock_prefetch(const void *x)
 /* This decides where the kernel will search for a free chunk of vm
  * space during mmap's.
  */
+/* NOTE: limit 32bit processes to 2Gb for now, see libuc++/functional */
 #define IA32_PAGE_OFFSET	((current->personality & ADDR_LIMIT_3GB) ? \
-					0xc0000000 : 0xFFFFe000)
+					0xc0000000 : 0x80000000)
 
 #define TASK_SIZE_LOW		(test_thread_flag(TIF_ADDR32) ? \
 					IA32_PAGE_OFFSET : DEFAULT_MAP_WINDOW)

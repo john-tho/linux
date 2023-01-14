@@ -8,6 +8,9 @@
 #include "socket.h"
 #include "queueing.h"
 #include "messages.h"
+#include "logger.h"
+
+#include <uapi/linux/wireguard.h>
 
 #include <linux/ctype.h>
 #include <linux/net.h>
@@ -390,6 +393,7 @@ retry:
 	ret = udp_sock_create(wg->creating_net, &port4, &new4);
 	if (ret < 0) {
 		pr_err("%s: Could not create IPv4 socket\n", wg->dev->name);
+		wg_log(WGLOG_LEVEL_ERROR, wg->dev, NULL, "Could not create IPv4 socket");
 		return ret;
 	}
 	set_sock_opts(new4);
@@ -405,6 +409,7 @@ retry:
 				goto retry;
 			pr_err("%s: Could not create IPv6 socket\n",
 			       wg->dev->name);
+			wg_log(WGLOG_LEVEL_ERROR, wg->dev, NULL, "Could not create IPv6 socket");
 			return ret;
 		}
 		set_sock_opts(new6);

@@ -14,6 +14,7 @@
 #include <linux/freezer.h>
 #include <linux/syscore_ops.h>
 #include <linux/export.h>
+#include <linux/console.h>
 
 #include <xen/xen.h>
 #include <xen/xenbus.h>
@@ -133,6 +134,8 @@ static void do_suspend(void)
 
 	si.cancelled = 1;
 
+	suspend_console();
+
 	err = stop_machine(xen_suspend, &si, cpumask_of(0));
 
 	/* Resume console as early as possible. */
@@ -157,6 +160,8 @@ out_resume:
 		xs_suspend_cancel();
 
 	dpm_resume_end(si.cancelled ? PMSG_THAW : PMSG_RESTORE);
+
+	resume_console();
 
 out_thaw:
 	thaw_processes();

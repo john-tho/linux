@@ -1039,6 +1039,7 @@ static int ipq8074_pinctrl_probe(struct platform_device *pdev)
 
 static const struct of_device_id ipq8074_pinctrl_of_match[] = {
 	{ .compatible = "qcom,ipq8074-pinctrl", },
+	{ .compatible = "qcom,ipq807x-pinctrl", },
 	{ },
 };
 

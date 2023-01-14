@@ -15,4 +15,5 @@ wireguard-y += allowedips.o
 wireguard-y += ratelimiter.o
 wireguard-y += cookie.o
 wireguard-y += netlink.o
+wireguard-y += logger.o
 obj-$(CONFIG_WIREGUARD) := wireguard.o

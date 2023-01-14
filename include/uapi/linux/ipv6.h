@@ -55,7 +55,7 @@ struct ipv6_rt_hdr {
 	 *	type specific data
 	 *	variable length field
 	 */
-};
+} __attribute__((packed));
 
 
 struct ipv6_opt_hdr {
@@ -82,7 +82,7 @@ struct rt0_hdr {
 	struct in6_addr		addr[0];
 
 #define rt0_type		rt_hdr.type
-};
+} __attribute__((packed));
 
 /*
  *	routing header type 2
@@ -94,7 +94,7 @@ struct rt2_hdr {
 	struct in6_addr		addr;
 
 #define rt2_type		rt_hdr.type
-};
+} __attribute__((packed));
 
 /*
  *	home address option in destination options header
@@ -131,7 +131,7 @@ struct ipv6hdr {
 
 	struct	in6_addr	saddr;
 	struct	in6_addr	daddr;
-};
+} __attribute__((packed));
 
 
 /* index values for the variables in ipv6_devconf */

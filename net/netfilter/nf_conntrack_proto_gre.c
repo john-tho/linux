@@ -63,6 +63,7 @@ void nf_ct_gre_keymap_flush(struct net *net)
 	spin_lock_bh(&keymap_lock);
 	list_for_each_entry_safe(km, tmp, &net_gre->keymap_list, list) {
 		list_del_rcu(&km->list);
+		*km->kmp = NULL;
 		kfree_rcu(km, rcu);
 	}
 	spin_unlock_bh(&keymap_lock);
@@ -108,27 +109,38 @@ int nf_ct_gre_keymap_add(struct nf_conn *ct, enum ip_conntrack_dir dir,
 	struct nf_ct_gre_keymap **kmp, *km;
 
 	kmp = &ct_pptp_info->keymap[dir];
+  retry:
+	spin_lock_bh(&keymap_lock);
 	if (*kmp) {
 		/* check whether it's a retransmission */
 		list_for_each_entry_rcu(km, &net_gre->keymap_list, list) {
-			if (gre_key_cmpfn(km, t) && km == *kmp)
+			if (gre_key_cmpfn(km, t) && km == *kmp) {
+				spin_unlock_bh(&keymap_lock);
 				return 0;
+		}
 		}
 		pr_debug("trying to override keymap_%s for ct %p\n",
 			 dir == IP_CT_DIR_REPLY ? "reply" : "orig", ct);
 		return -EEXIST;
 	}
+	spin_unlock_bh(&keymap_lock);
 
 	km = kmalloc(sizeof(*km), GFP_ATOMIC);
 	if (!km)
 		return -ENOMEM;
 	memcpy(&km->tuple, t, sizeof(*t));
-	*kmp = km;
 
 	pr_debug("adding new entry %p: ", km);
 	nf_ct_dump_tuple(&km->tuple);
 
 	spin_lock_bh(&keymap_lock);
+	if (*kmp) {
+	    spin_unlock_bh(&keymap_lock);
+	    kfree(km);
+	    goto retry;
+	}
+	*kmp = km;
+	km->kmp = kmp;
 	list_add_tail(&km->list, &net_gre->keymap_list);
 	spin_unlock_bh(&keymap_lock);
 
@@ -184,10 +196,12 @@ bool gre_pkt_to_tuple(const struct sk_buff *skb, unsigned int dataoff,
 	if (!pgrehdr)
 		return true;
 
+#if 0
 	if (grehdr->protocol != GRE_PROTO_PPP) {
 		pr_debug("Unsupported GRE proto(0x%x)\n", ntohs(grehdr->protocol));
 		return false;
 	}
+#endif
 
 	tuple->dst.u.gre.key = pgrehdr->call_id;
 	srckey = gre_keymap_lookup(net, tuple);
@@ -241,6 +255,12 @@ int nf_conntrack_gre_packet(struct nf_conn *ct,
 		/* Also, more likely to be important, and not a probe. */
 		if (!test_and_set_bit(IPS_ASSURED_BIT, &ct->status))
 			nf_conntrack_event_cache(IPCT_ASSURED, ct);
+
+		/* give longer life for controlling TCP connection */
+		if (master_ct(ct)) {
+			nf_ct_refresh_acct(master_ct(ct), ctinfo, skb,
+					   ct->proto.gre.stream_timeout);
+		}
 	} else
 		nf_ct_refresh_acct(ct, ctinfo, skb,
 				   ct->proto.gre.timeout);

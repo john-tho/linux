@@ -238,6 +238,8 @@
 			 SKB_DATA_ALIGN(sizeof(struct sk_buff)) +	\
 			 SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
 
+extern struct kmem_cache *skbuff_head_cache __read_mostly;
+
 struct net_device;
 struct scatterlist;
 struct pipe_inode_info;
@@ -756,6 +758,8 @@ struct sk_buff {
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	unsigned long		 _nfct;
 #endif
+	int			(*okfn)(struct net *net, struct sock *,
+					struct sk_buff *);
 	unsigned int		len,
 				data_len;
 	__u16			mac_len,
@@ -857,6 +861,9 @@ struct sk_buff {
 	__u8			decrypted:1;
 #endif
 
+	__u8			layer7seen:1;
+	__u8			of_skip:1;
+
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
 #endif
@@ -869,6 +876,7 @@ struct sk_buff {
 		};
 	};
 	__u32			priority;
+	__u32			ingress_priority;
 	int			skb_iif;
 	__u32			hash;
 	__be16			vlan_proto;
@@ -2682,7 +2690,7 @@ static inline int pskb_network_may_pull(struct sk_buff *skb, unsigned int len)
  * NET_IP_ALIGN(2) + ethernet_header(14) + IP_header(20/40) + ports(8)
  */
 #ifndef NET_SKB_PAD
-#define NET_SKB_PAD	max(32, L1_CACHE_BYTES)
+#define NET_SKB_PAD	max(64, L1_CACHE_BYTES)
 #endif
 
 int ___pskb_trim(struct sk_buff *skb, unsigned int len);
@@ -3427,6 +3435,30 @@ static inline int pskb_trim_rcsum(struct sk_buff *skb, unsigned int len)
 	if (likely(len >= skb->len))
 		return 0;
 	return pskb_trim_rcsum_slow(skb, len);
+}
+
+extern void skb_recycle(struct sk_buff *skb);
+extern bool skb_recycle_check(struct sk_buff *skb, int skb_size);
+
+static inline bool skb_is_recycleable(const struct sk_buff *skb, int skb_size)
+{
+	if (irqs_disabled())
+		return false;
+
+	if (skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY)
+		return false;
+
+	if (skb_is_nonlinear(skb) || skb->fclone != SKB_FCLONE_UNAVAILABLE)
+		return false;
+
+	skb_size = SKB_DATA_ALIGN(skb_size + NET_SKB_PAD);
+	if (skb_end_pointer(skb) - skb->head < skb_size)
+		return false;
+
+	if (skb_shared(skb) || skb_cloned(skb))
+		return false;
+
+	return true;
 }
 
 static inline int __skb_trim_rcsum(struct sk_buff *skb, unsigned int len)
@@ -4259,6 +4291,7 @@ static inline void nf_reset_ct(struct sk_buff *skb)
 	nf_conntrack_put(skb_nfct(skb));
 	skb->_nfct = 0;
 #endif
+	skb->layer7seen = 0;
 }
 
 static inline void nf_reset_trace(struct sk_buff *skb)
@@ -4283,6 +4316,7 @@ static inline void __nf_copy(struct sk_buff *dst, const struct sk_buff *src,
 	dst->_nfct = src->_nfct;
 	nf_conntrack_get(skb_nfct(src));
 #endif
+	dst->okfn = src->okfn;
 #if IS_ENABLED(CONFIG_NETFILTER_XT_TARGET_TRACE) || defined(CONFIG_NF_TABLES)
 	if (copy)
 		dst->nf_trace = src->nf_trace;
@@ -4579,6 +4613,10 @@ static inline __wsum lco_csum(struct sk_buff *skb)
 	 * adjustment filled in by caller) and return result.
 	 */
 	return csum_partial(l4_hdr, csum_start - l4_hdr, partial);
+}
+
+static inline __u16 get_skb_flow(struct sk_buff *skb) {
+	return (skb->mark >> 16) & 0xff;
 }
 
 static inline bool skb_is_redirected(const struct sk_buff *skb)

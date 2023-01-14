@@ -1490,10 +1490,10 @@ static netdev_features_t rtl8169_fix_features(struct net_device *dev,
 {
 	struct rtl8169_private *tp = netdev_priv(dev);
 
-	if (dev->mtu > TD_MSS_MAX)
+	if (dev->l2mtu > TD_MSS_MAX)
 		features &= ~NETIF_F_ALL_TSO;
 
-	if (dev->mtu > ETH_DATA_LEN &&
+	if (dev->l2mtu > ETH_DATA_LEN &&
 	    tp->mac_version > RTL_GIGA_MAC_VER_06)
 		features &= ~(NETIF_F_CSUM_MASK | NETIF_F_ALL_TSO);
 
@@ -3877,7 +3877,7 @@ static void rtl_hw_start(struct  rtl8169_private *tp)
 	rtl_set_rx_tx_desc_registers(tp);
 	rtl_lock_config_regs(tp);
 
-	rtl_jumbo_config(tp, tp->dev->mtu);
+	rtl_jumbo_config(tp, tp->dev->l2mtu);
 
 	/* Initially a 10 us delay. Turned it into a PCI commit. - FR */
 	RTL_R16(tp, CPlusCmd);
@@ -5513,6 +5513,8 @@ static int rtl_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	rtl8169_get_mac_version(tp);
 	if (tp->mac_version == RTL_GIGA_MAC_NONE)
 		return -ENODEV;
+
+	dev->l2mtu = rtl_jumbo_max(tp);
 
 	tp->cp_cmd = RTL_R16(tp, CPlusCmd);
 

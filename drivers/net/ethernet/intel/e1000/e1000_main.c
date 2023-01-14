@@ -7,6 +7,7 @@
 #include <linux/prefetch.h>
 #include <linux/bitops.h>
 #include <linux/if_vlan.h>
+#include <linux/dmi.h>
 
 char e1000_driver_name[] = "e1000";
 static char e1000_driver_string[] = "Intel(R) PRO/1000 Network Driver";
@@ -542,8 +543,12 @@ void e1000_reinit_locked(struct e1000_adapter *adapter)
 	WARN_ON(in_interrupt());
 	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags))
 		msleep(1);
+
+	if (!test_bit(__E1000_DOWN, &adapter->flags)) {
 	e1000_down(adapter);
 	e1000_up(adapter);
+	}
+
 	clear_bit(__E1000_RESETTING, &adapter->flags);
 }
 
@@ -1062,8 +1067,9 @@ static int e1000_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 				  NETIF_F_SG);
 
 	/* Do not set IFF_UNICAST_FLT for VMWare's 82545EM */
-	if (hw->device_id != E1000_DEV_ID_82545EM_COPPER ||
-	    hw->subsystem_vendor_id != PCI_VENDOR_ID_VMWARE)
+	if ((hw->device_id != E1000_DEV_ID_82545EM_COPPER ||
+	    hw->subsystem_vendor_id != PCI_VENDOR_ID_VMWARE) &&
+	    !dmi_match(DMI_BOARD_NAME, "VirtualBox"))
 		netdev->priv_flags |= IFF_UNICAST_FLT;
 
 	/* MTU range: 46 - 16110 */
@@ -1433,10 +1439,15 @@ int e1000_close(struct net_device *netdev)
 	struct e1000_hw *hw = &adapter->hw;
 	int count = E1000_CHECK_RESET_COUNT;
 
-	while (test_bit(__E1000_RESETTING, &adapter->flags) && count--)
+	while (test_and_set_bit(__E1000_RESETTING, &adapter->flags) && count--)
 		usleep_range(10000, 20000);
 
-	WARN_ON(test_bit(__E1000_RESETTING, &adapter->flags));
+	WARN_ON(count < 0);
+
+	/* signal that we're down so that the reset task will no longer run */
+	set_bit(__E1000_DOWN, &adapter->flags);
+	clear_bit(__E1000_RESETTING, &adapter->flags);
+
 	e1000_down(adapter);
 	e1000_power_down_phy(adapter);
 	e1000_free_irq(adapter);
@@ -2469,7 +2480,7 @@ static void e1000_watchdog(struct work_struct *work)
 			netif_carrier_on(netdev);
 			if (!test_bit(__E1000_DOWN, &adapter->flags))
 				schedule_delayed_work(&adapter->phy_info_task,
-						      2 * HZ);
+						      HZ);
 			adapter->smartspeed = 0;
 		}
 	} else {
@@ -2482,7 +2493,7 @@ static void e1000_watchdog(struct work_struct *work)
 
 			if (!test_bit(__E1000_DOWN, &adapter->flags))
 				schedule_delayed_work(&adapter->phy_info_task,
-						      2 * HZ);
+						      HZ);
 		}
 
 		e1000_smartspeed(adapter);
@@ -2540,7 +2551,7 @@ link_up:
 
 	/* Reschedule the task */
 	if (!test_bit(__E1000_DOWN, &adapter->flags))
-		schedule_delayed_work(&adapter->watchdog_task, 2 * HZ);
+		schedule_delayed_work(&adapter->watchdog_task, HZ);
 }
 
 enum latency_range {

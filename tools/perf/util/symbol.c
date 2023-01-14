@@ -58,6 +58,15 @@ struct symbol_conf symbol_conf = {
 	.time_quantum		= 100 * NSEC_PER_MSEC, /* 100ms */
 	.show_hist_headers	= true,
 	.symfs			= "",
+#ifdef __tile__
+	/*
+	 * Use kallsyms for kernel symbol resolution, since by default perf tool
+	 * first try to use /boot/vmlinux(if exist) for kernel symbol
+	 * resolution, but TILE can not get symbols properly from /boot/vmlinux(
+	 * why?).
+	 */
+	.kallsyms_name		= "/proc/kallsyms",
+#endif
 	.event_group		= true,
 	.inline_name		= true,
 	.res_sample		= 0,
@@ -651,6 +660,7 @@ static bool symbol__is_idle(const char *name)
 		"poll_idle",
 		"ppc64_runlatch_off",
 		"pseries_dedicated_idle_sleep",
+		"_cpu_idle_nap", /* TILE arch */
 		NULL
 	};
 	int i;

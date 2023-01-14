@@ -113,6 +113,11 @@ static int set_brk(unsigned long start, unsigned long end, int prot)
 				prot & PROT_EXEC ? VM_EXEC : 0);
 		if (error)
 			return error;
+#ifdef CONFIG_HOMECACHE
+                down_read(&current->mm->mmap_sem);
+                arch_exec_map(start);
+                up_read(&current->mm->mmap_sem);
+#endif
 	}
 	current->mm->start_brk = current->mm->brk = end;
 	return 0;
@@ -379,6 +384,13 @@ static unsigned long elf_map(struct file *filep, unsigned long addr,
 	} else
 		map_addr = vm_mmap(filep, addr, size, prot, type, off);
 
+#ifdef CONFIG_HOMECACHE
+        if (!BAD_ADDR(map_addr)) {
+                down_read(&current->mm->mmap_sem);
+                arch_exec_map(map_addr);
+                up_read(&current->mm->mmap_sem);
+        }
+#endif
 	if ((type & MAP_FIXED_NOREPLACE) &&
 	    PTR_ERR((void *)map_addr) == -EEXIST)
 		pr_info("%d (%s): Uhuuh, elf segment at %px requested but the memory is mapped already\n",
@@ -669,6 +681,13 @@ static unsigned long load_elf_interp(struct elfhdr *interp_elf_ex,
 				bss_prot & PROT_EXEC ? VM_EXEC : 0);
 		if (error)
 			goto out;
+#ifdef CONFIG_HOMECACHE
+                if (last_bss > elf_bss) {
+                        down_read(&current->mm->mmap_sem);
+                        arch_exec_map(error);
+                        up_read(&current->mm->mmap_sem);
+                }
+#endif
 	}
 
 	error = load_addr;

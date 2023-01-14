@@ -314,6 +314,9 @@ static const struct of_device_id qcom_wdt_of_table[] = {
 	{ .compatible = "qcom,kpss-timer", .data = reg_offset_data_apcs_tmr },
 	{ .compatible = "qcom,scss-timer", .data = reg_offset_data_apcs_tmr },
 	{ .compatible = "qcom,kpss-wdt", .data = reg_offset_data_kpss },
+	{ .compatible = "qcom,kpss-wdt-ipq807x", .data = reg_offset_data_kpss },
+	{ .compatible = "qcom,kpss-wdt-ipq6018", .data = reg_offset_data_kpss },
+	{ .compatible = "qcom,kpss-wdt-ipq5018", .data = reg_offset_data_kpss },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, qcom_wdt_of_table);

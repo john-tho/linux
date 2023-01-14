@@ -3,6 +3,14 @@
 # Makefile for the Linux networking core.
 #
 
+CFLAGS_skbuff.o := -O2 # NEEDED 30kpss
+CFLAGS_dev.o := -O2 # NEEDED, 5kpps
+CFLAGS_dst.o := -O2 # NEEDED, 7kpps
+
+CFLAGS_dst_cache.o := -O2 # very minor improvement, 1.2kpps
+#CFLAGS_fib_rules.o := -O2
+#CFLAGS_rtnetlink.o := -O2
+
 obj-y := sock.o request_sock.o skbuff.o datagram.o stream.o scm.o \
 	 gen_stats.o gen_estimator.o net_namespace.o secure_seq.o flow_dissector.o
 

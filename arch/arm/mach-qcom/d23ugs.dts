@@ -1,0 +1,127 @@
+/dts-v1/;
+
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "RBD23UGS-5HPacD2HnD";
+	leds {
+		compatible = "leds-rb";
+		power-led {
+			gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		user-led {
+			gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+		};
+		link-act-led {
+			gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+		};
+		led1 {
+			gpios = <&tlmm 4 GPIO_ACTIVE_HIGH>;
+		};
+		led2 {
+			gpios = <&tlmm 28 GPIO_ACTIVE_HIGH>;
+		};
+		led3 {
+			gpios = <&tlmm 29 GPIO_ACTIVE_HIGH>;
+		};
+		led4 {
+			gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
+		};
+		led5 {
+			gpios = <&tlmm 31 GPIO_ACTIVE_HIGH>;
+		};
+		usb-power-off {
+			gpios = <&tlmm 44 GPIO_ACTIVE_LOW>;
+		};
+		gps-timer {
+			gpios = <&tlmm 10 GPIO_ACTIVE_LOW>;
+		};
+		gps-reset {
+			gpios = <&tlmm 11 GPIO_ACTIVE_LOW>;
+		};
+		gps-pps {
+			gpios = <&tlmm 43 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		button {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		mpcie-power-off {
+			gpios = <&tlmm 51 GPIO_ACTIVE_LOW>;
+			default-state = "keep";
+		};
+	};
+};
+
+&tlmm {
+	ts_cs_pin: ts_cs_pin_pinmux {
+		mux {
+			pins = "gpio45";
+			function = "gpio";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&spi_0 {
+	num-cs = <2>;
+	cs-gpios = <0>, <&tlmm 45 GPIO_ACTIVE_LOW>;
+
+	spi-ts@1 {
+		pinctrl-0 = <&ts_cs_pin>;
+		pinctrl-names = "default";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "rb-spi-ts";
+		spi-max-frequency = <1000000>;
+		reg = <1>;
+	};
+};
+
+&tlmm {
+	edma_pins: ema_pinmux {
+		mux {
+			pins = "gpio6", "gpio7";
+			function = "mdio";
+			bias-disable;
+		};
+	};
+};
+
+&serial1 {
+	status = "ok";
+};
+
+&edma {
+	port_map = < 3 0x20004 (-1)>;
+	pinctrl-0 = <&edma_pins>;
+	pinctrl-names = "default";
+};
+
+&pcie0 {
+	persts-gpio = <&tlmm 49 GPIO_ACTIVE_HIGH>;
+	status = "ok";
+};
+
+&usb2 {
+	status = "ok";
+};
+
+&usb2_hs_phy {
+	status = "ok";
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&usb3_ss_phy {
+	status = "ok";
+};
+
+&usb3_hs_phy {
+	status = "ok";
+};

@@ -291,13 +291,18 @@ static struct clk_branch gcc_blsp1_qup2_i2c_apps_clk = {
 };
 
 static const struct freq_tbl ftbl_gcc_blsp1_qup1_2_spi_apps_clk[] = {
-	F(960000, P_XO, 12, 1, 4),
+	F(1000000, P_XO, 12, 1, 4),
+	F(2000000, P_XO, 12, 1, 2),
 	F(4800000, P_XO, 1, 1, 10),
 	F(9600000, P_XO, 1, 1, 5),
-	F(15000000, P_XO, 1, 1, 3),
+	F(16000000, P_XO, 1, 1, 3),
 	F(19200000, P_XO, 1, 2, 5),
 	F(24000000, P_XO, 1, 1, 2),
-	F(48000000, P_XO, 1, 0, 0),
+	F(28600000, P_FEPLL200, 7, 1, 1),
+	F(33000000, P_FEPLL200, 6, 1, 1),
+	F(40000000, P_FEPLL200, 5, 1, 1),
+	F(48000000, P_XO, 1, 1, 1),
+	F(50000000, P_FEPLL200, 4, 1, 1),
 	{ }
 };
 
@@ -540,12 +545,6 @@ static struct clk_branch gcc_gp3_clk = {
 };
 
 static const struct freq_tbl ftbl_gcc_sdcc1_apps_clk[] = {
-	F(144000,    P_XO,			1,  3, 240),
-	F(400000,    P_XO,			1,  1, 0),
-	F(20000000,  P_FEPLL500,		1,  1, 25),
-	F(25000000,  P_FEPLL500,		1,  1, 20),
-	F(50000000,  P_FEPLL500,		1,  1, 10),
-	F(100000000, P_FEPLL500,		1,  1, 5),
 	F(192000000, P_DDRPLL,			1,  0, 0),
 	{ }
 };
@@ -560,7 +559,6 @@ static struct clk_rcg2  sdcc1_apps_clk_src = {
 		.parent_names = gcc_xo_sdcc1_500,
 		.num_parents = 3,
 		.ops = &clk_rcg2_ops,
-		.flags = CLK_SET_RATE_PARENT,
 	},
 };
 
@@ -579,6 +577,9 @@ static const struct freq_tbl ftbl_gcc_apps_clk[] = {
 	F(632000000, P_DDRPLLAPSS, 1, 0, 0),
 	F(672000000, P_DDRPLLAPSS, 1, 0, 0),
 	F(716000000, P_DDRPLLAPSS, 1, 0, 0),
+	F(768000000, P_DDRPLLAPSS, 1, 0, 0),
+	F(827000000, P_DDRPLLAPSS, 1, 0, 0),
+	F(896000000, P_DDRPLLAPSS, 1, 0, 0),
 	{ }
 };
 

@@ -1386,4 +1386,30 @@ static inline int of_clk_detect_critical(struct device_node *np, int index,
 
 void clk_gate_restore_context(struct clk_hw *hw);
 
+int clk_prepare_hk(struct clk *clk);
+void clk_unprepare_hk(struct clk *clk);
+int clk_enable_hk(struct clk *clk);
+void clk_disable_hk(struct clk *clk);
+int clk_set_rate_hk(struct clk *clk, unsigned long rate);
+unsigned long clk_get_rate_hk(struct clk *clk);
+static inline int clk_prepare_enable_hk(struct clk *clk)
+{
+	int ret;
+
+	ret = clk_prepare_hk(clk);
+	if (ret)
+		return ret;
+	ret = clk_enable_hk(clk);
+	if (ret)
+		clk_unprepare_hk(clk);
+
+	return ret;
+}
+
+static inline void clk_disable_unprepare_hk(struct clk *clk)
+{
+	clk_disable_hk(clk);
+	clk_unprepare_hk(clk);
+}
+
 #endif /* CLK_PROVIDER_H */

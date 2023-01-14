@@ -14,6 +14,7 @@ enum {
 	CLK_ALPHA_PLL_TYPE_BRAMMO,
 	CLK_ALPHA_PLL_TYPE_FABIA,
 	CLK_ALPHA_PLL_TYPE_TRION,
+	CLK_ALPHA_PLL_TYPE_LUCID,
 	CLK_ALPHA_PLL_TYPE_MAX,
 };
 
@@ -30,6 +31,7 @@ enum {
 	PLL_OFF_CONFIG_CTL_U1,
 	PLL_OFF_TEST_CTL,
 	PLL_OFF_TEST_CTL_U,
+	PLL_OFF_TEST_CTL_U1,
 	PLL_OFF_STATUS,
 	PLL_OFF_OPMODE,
 	PLL_OFF_FRAC,
@@ -61,6 +63,7 @@ struct clk_alpha_pll {
 #define SUPPORTS_OFFLINE_REQ	BIT(0)
 #define SUPPORTS_FSM_MODE	BIT(2)
 #define SUPPORTS_DYNAMIC_UPDATE	BIT(3)
+#define SUPPORTS_16BIT_ALPHA	BIT(1)
 	u8 flags;
 
 	struct clk_regmap clkr;
@@ -79,6 +82,7 @@ struct clk_alpha_pll {
  */
 struct clk_alpha_pll_postdiv {
 	u32 offset;
+	const u32 *regs_offsets;
 	u8 width;
 	const u8 *regs;
 
@@ -94,10 +98,13 @@ struct alpha_pll_config {
 	u32 alpha_hi;
 	u32 config_ctl_val;
 	u32 config_ctl_hi_val;
+	u32 config_ctl_hi1_val;
 	u32 user_ctl_val;
 	u32 user_ctl_hi_val;
+	u32 user_ctl_hi1_val;
 	u32 test_ctl_val;
 	u32 test_ctl_hi_val;
+	u32 test_ctl_hi1_val;
 	u32 main_output_mask;
 	u32 aux_output_mask;
 	u32 aux2_output_mask;
@@ -115,18 +122,25 @@ struct alpha_pll_config {
 extern const struct clk_ops clk_alpha_pll_ops;
 extern const struct clk_ops clk_alpha_pll_fixed_ops;
 extern const struct clk_ops clk_alpha_pll_hwfsm_ops;
+extern const struct clk_ops clk_alpha_pll_huayra_ops;
 extern const struct clk_ops clk_alpha_pll_postdiv_ops;
 extern const struct clk_ops clk_alpha_pll_huayra_ops;
 extern const struct clk_ops clk_alpha_pll_postdiv_ro_ops;
+extern const struct clk_ops clk_alpha_pll_brammo_ops;
 
 extern const struct clk_ops clk_alpha_pll_fabia_ops;
 extern const struct clk_ops clk_alpha_pll_fixed_fabia_ops;
 extern const struct clk_ops clk_alpha_pll_postdiv_fabia_ops;
 
+extern const struct clk_ops clk_alpha_pll_lucid_ops;
+extern const struct clk_ops clk_alpha_pll_fixed_lucid_ops;
+extern const struct clk_ops clk_alpha_pll_postdiv_lucid_ops;
 void clk_alpha_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
 			     const struct alpha_pll_config *config);
 void clk_fabia_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
 				const struct alpha_pll_config *config);
+void clk_lucid_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
+			     const struct alpha_pll_config *config);
 extern const struct clk_ops clk_trion_fixed_pll_ops;
 extern const struct clk_ops clk_trion_pll_postdiv_ops;
 

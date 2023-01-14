@@ -111,6 +111,7 @@ struct smp2p_entry {
 /**
  * struct qcom_smp2p - device driver context
  * @dev:	device driver handle
+ * need_ssr_ack: remote device needs ack
  * @in:		pointer to the inbound smem item
  * @smem_items:	ids of the two smem items
  * @valid_entries: already scanned inbound entries
@@ -126,6 +127,7 @@ struct smp2p_entry {
  */
 struct qcom_smp2p {
 	struct device *dev;
+	unsigned int need_ssr_ack;
 
 	struct smp2p_smem_item *in;
 	struct smp2p_smem_item *out;
@@ -200,7 +202,7 @@ static irqreturn_t qcom_smp2p_intr(int irq, void *data)
 	/* Match newly created entries */
 	for (i = smp2p->valid_entries; i < in->valid_entries; i++) {
 		list_for_each_entry(entry, &smp2p->inbound, node) {
-			memcpy(buf, in->entries[i].name, sizeof(buf));
+			memcpy_fromio(buf, in->entries[i].name, sizeof(buf));
 			if (!strcmp(buf, entry->name)) {
 				entry->value = &in->entries[i].value;
 				break;
@@ -235,6 +237,9 @@ static irqreturn_t qcom_smp2p_intr(int irq, void *data)
 			}
 		}
 	}
+
+	if (smp2p->need_ssr_ack == SMP2P_FEATURE_SSR_ACK)
+		qcom_smp2p_kick(smp2p);
 
 	return IRQ_HANDLED;
 }
@@ -347,10 +352,16 @@ static int qcom_smp2p_outbound_entry(struct qcom_smp2p *smp2p,
 
 	/* Allocate an entry from the smem item */
 	strlcpy(buf, entry->name, SMP2P_MAX_ENTRY_NAME);
-	memcpy(out->entries[out->valid_entries].name, buf, SMP2P_MAX_ENTRY_NAME);
+	memcpy_toio(out->entries[out->valid_entries].name, buf, SMP2P_MAX_ENTRY_NAME);
 
 	/* Make the logical entry reference the physical value */
 	entry->value = &out->entries[out->valid_entries].value;
+
+	if (of_property_read_bool(node, "qcom,smp2p-feature-ssr-ack")) {
+		smp2p->need_ssr_ack = SMP2P_FEATURE_SSR_ACK;
+	} else {
+		smp2p->need_ssr_ack = 0;
+	}
 
 	out->valid_entries++;
 
@@ -384,7 +395,7 @@ static int qcom_smp2p_alloc_outbound_item(struct qcom_smp2p *smp2p)
 		return PTR_ERR(out);
 	}
 
-	memset(out, 0, sizeof(*out));
+	memset_io(out, 0, sizeof(*out));
 	out->magic = SMP2P_MAGIC;
 	out->local_pid = smp2p->local_pid;
 	out->remote_pid = smp2p->remote_pid;

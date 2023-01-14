@@ -220,6 +220,7 @@ static struct ipv6_devconf ipv6_devconf __read_mostly = {
 	.proxy_ndp		= 0,
 	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
+	.force_disable_ipv6	= 0,
 	.accept_dad		= 0,
 	.suppress_frag_ndisc	= 1,
 	.accept_ra_mtu		= 1,
@@ -274,6 +275,7 @@ static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
 	.proxy_ndp		= 0,
 	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
+	.force_disable_ipv6	= 0,
 	.accept_dad		= 1,
 	.suppress_frag_ndisc	= 1,
 	.accept_ra_mtu		= 1,
@@ -291,6 +293,8 @@ static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
 	.addr_gen_mode		= IN6_ADDR_GEN_MODE_EUI64,
 	.disable_policy		= 0,
 };
+
+static unsigned char zero_macaddr[ETH_ALEN];
 
 /* Check if link is ready: is it up and is a valid qdisc available */
 static inline bool addrconf_link_ready(const struct net_device *dev)
@@ -3358,6 +3362,10 @@ static void addrconf_dev_config(struct net_device *dev)
 	if (IS_ERR(idev))
 		return;
 
+        /* do not generate the link-local address if interface has zero mac address */
+        if (!memcmp(dev->dev_addr, zero_macaddr, ETH_ALEN))
+		return;
+
 	/* this device type has no EUI support */
 	if (dev->type == ARPHRD_NONE &&
 	    idev->cnf.addr_gen_mode == IN6_ADDR_GEN_MODE_EUI64)
@@ -3490,6 +3498,7 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 	struct net *net = dev_net(dev);
 	int run_pending = 0;
 	int err;
+	struct in6_addr addr_buf;
 
 	switch (event) {
 	case NETDEV_REGISTER:
@@ -3628,6 +3637,14 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 			 */
 			if (dev->mtu < IPV6_MIN_MTU)
 				addrconf_ifdown(dev, dev != net->loopback_dev);
+		}
+		break;
+
+	case NETDEV_CHANGEADDR:
+		/* if there is idev, but no link-local address, try to create one. */
+		if (idev && (idev->if_flags & IF_READY)
+			&& ipv6_get_lladdr(dev, &addr_buf, 0) != 0) {
+			addrconf_dev_config(dev);
 		}
 		break;
 
@@ -6090,7 +6107,7 @@ int addrconf_sysctl_mtu(struct ctl_table *ctl, int write,
 	return proc_dointvec_minmax(&lctl, write, buffer, lenp, ppos);
 }
 
-static void dev_disable_change(struct inet6_dev *idev)
+void dev_disable_change(struct inet6_dev *idev)
 {
 	struct netdev_notifier_info info;
 
@@ -6103,6 +6120,7 @@ static void dev_disable_change(struct inet6_dev *idev)
 	else
 		addrconf_notify(NULL, NETDEV_UP, &info);
 }
+EXPORT_SYMBOL(dev_disable_change);
 
 static void addrconf_disable_change(struct net *net, __s32 newf)
 {
@@ -6112,11 +6130,14 @@ static void addrconf_disable_change(struct net *net, __s32 newf)
 	for_each_netdev(net, dev) {
 		idev = __in6_dev_get(dev);
 		if (idev) {
+			/* If force disabled then cnf.disable_ipv6 already actual. */
+			if (!idev->cnf.force_disable_ipv6) {
 			int changed = (!idev->cnf.disable_ipv6) ^ (!newf);
 			idev->cnf.disable_ipv6 = newf;
 			if (changed)
 				dev_disable_change(idev);
 		}
+	}
 	}
 }
 
@@ -6917,6 +6938,7 @@ static void __addrconf_sysctl_unregister(struct net *net,
 
 static int addrconf_sysctl_register(struct inet6_dev *idev)
 {
+#if 0
 	int err;
 
 	if (!sysctl_dev_name_is_allowed(idev->dev->name))
@@ -6932,13 +6954,18 @@ static int addrconf_sysctl_register(struct inet6_dev *idev)
 		neigh_sysctl_unregister(idev->nd_parms);
 
 	return err;
+#else
+	return 0; // speed up interface registration
+#endif
 }
 
 static void addrconf_sysctl_unregister(struct inet6_dev *idev)
 {
+#if 0 // speed up interface registration
 	__addrconf_sysctl_unregister(dev_net(idev->dev), &idev->cnf,
 				     idev->dev->ifindex);
 	neigh_sysctl_unregister(idev->nd_parms);
+#endif	
 }
 
 

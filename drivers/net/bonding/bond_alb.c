@@ -1007,6 +1007,7 @@ static int alb_set_slave_mac_addr(struct slave *slave, u8 addr[],
 	struct net_device *dev = slave->dev;
 	struct sockaddr_storage ss;
 
+#if 0
 	if (BOND_MODE(slave->bond) == BOND_MODE_TLB) {
 		memcpy(dev->dev_addr, addr, len);
 		return 0;
@@ -1021,6 +1022,7 @@ static int alb_set_slave_mac_addr(struct slave *slave, u8 addr[],
 		slave_err(slave->bond->dev, dev, "dev_set_mac_address on slave failed! ALB mode requires that the base driver support setting the hw address also when the network device's interface is open\n");
 		return -EOPNOTSUPP;
 	}
+#endif	
 	return 0;
 }
 
@@ -1226,6 +1228,7 @@ static int alb_set_mac_address(struct bonding *bond, void *addr)
 	char tmp_addr[MAX_ADDR_LEN];
 	int res;
 
+#if 0	
 	if (bond->alb_info.rlb_enabled)
 		return 0;
 
@@ -1263,6 +1266,9 @@ unwind:
 	}
 
 	return res;
+#else
+	return 0;
+#endif	
 }
 
 /************************ exported alb funcions ************************/

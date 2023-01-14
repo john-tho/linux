@@ -14,6 +14,15 @@
 #include <asm/cache.h>
 #include <asm/tlbflush.h>
 
+void __inval_dcache_area(void *addr, size_t len);
+void __clean_dcache_area_poc(void *addr, size_t len);
+void __dma_map_area(const void *, size_t, int);
+void __dma_unmap_area(const void *, size_t, int);
+EXPORT_SYMBOL(__inval_dcache_area);
+EXPORT_SYMBOL(__clean_dcache_area_poc);
+EXPORT_SYMBOL(__dma_map_area);
+EXPORT_SYMBOL(__dma_unmap_area);
+
 void sync_icache_aliases(void *kaddr, unsigned long len)
 {
 	unsigned long addr = (unsigned long)kaddr;

@@ -1,0 +1,49 @@
+/dts-v1/;
+/ {
+	soc {
+		qcom,sps {
+			compatible = "qcom,msm_sps";
+			qcom,device-type = <3>;
+		};
+		qcrypto {
+			compatible = "qcom,qcrypto";
+			reg = <0x3801a000 0x20000>,
+                              <0x38004000 0xd000>;
+			reg-names = "crypto-base","crypto-bam-base";
+			interrupts = <0 241 0>;
+
+			clocks = <&gcc CE5_CORE_CLK>,
+			        <&gcc CE5_A_CLK>,
+			        <&gcc CE5_H_CLK>;
+			clock-names = "core_clk", "iface_clk", "bus_clk";
+
+			resets = <&gcc CRYPTO_ENG1_RESET>,
+                               <&gcc CRYPTO_ENG2_RESET>,
+                               <&gcc CRYPTO_ENG3_RESET>,
+                               <&gcc CRYPTO_ENG4_RESET>,
+                               <&gcc CRYPTO_AHB_RESET>;
+			reset-names = "ce1", "ce2", "ce3", "ce4", "ahb";
+		};
+		qcrypto2 {
+			compatible = "qcom,qcrypto";
+			reg = <0x3841a000 0x20000>,
+                              <0x38404000 0xd000>;
+			reg-names = "crypto-base","crypto-bam-base";
+			interrupts = <0 243 0>;
+		};
+		qcrypto3 {
+			compatible = "qcom,qcrypto";
+			reg = <0x3881a000 0x20000>,
+                              <0x38804000 0xd000>;
+			reg-names = "crypto-base","crypto-bam-base";
+			interrupts = <0 245 0>;
+		};
+		qcrypto4 {
+			compatible = "qcom,qcrypto";
+			reg = <0x3881a000 0x20000>,
+                              <0x38c04000 0xd000>;
+			reg-names = "crypto-base","crypto-bam-base";
+			interrupts = <0 247 0>;
+		};
+        };
+};

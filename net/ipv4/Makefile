@@ -3,6 +3,18 @@
 # Makefile for the Linux TCP/IP (INET) layer.
 #
 
+CFLAGS_route.o := -O2
+CFLAGS_ip_input.o := -O2
+CFLAGS_ip_forward.o := -O2
+CFLAGS_ip_output.o := -O2
+CFLAGS_fib_rules.o := -O2
+CFLAGS_arp.o := -O2
+CFLAGS_fib_trie.o := -O2
+CFLAGS_fib_frontend.o := -O2
+CFLAGS_fib_semantics.o := -O2
+CFLAGS_nexthop.o := -O2
+CFLAGS_inetpeer.o := -O2
+
 obj-y     := route.o inetpeer.o protocol.o \
 	     ip_input.o ip_fragment.o ip_forward.o ip_options.o \
 	     ip_output.o ip_sockglue.o inet_hashtables.o \

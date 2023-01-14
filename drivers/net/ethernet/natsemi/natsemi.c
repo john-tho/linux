@@ -99,9 +99,9 @@ static int full_duplex[MAX_UNITS];
    Making the Tx ring too large decreases the effectiveness of channel
    bonding and packet priority.
    There are no ill effects from too-large receive rings. */
-#define TX_RING_SIZE	16
-#define TX_QUEUE_LEN	10 /* Limit ring entries actually used, min 4. */
-#define RX_RING_SIZE	32
+#define TX_RING_SIZE	32
+#define TX_QUEUE_LEN	28 /* Limit ring entries actually used, min 4. */
+#define RX_RING_SIZE	64
 
 /* Operational parameters that usually are not changed. */
 /* Time in jiffies before concluding the transmitter is hung. */
@@ -591,6 +591,10 @@ struct netdev_private {
 	unsigned int iosize;
 	spinlock_t lock;
 	u32 msg_enable;
+
+	int long_cable;
+	int cable_magic_done;
+
 	/* EEPROM data */
 	int eeprom_size;
 };
@@ -1586,8 +1590,11 @@ static void do_cable_magic(struct net_device *dev)
 	if (dev->if_port != PORT_TP)
 		return;
 
-	if (np->srr >= SRR_DP83816_A5)
+	if (np->srr >= SRR_DP83816_A5 || np->long_cable)
 		return;
+
+	np->cable_magic_done = 1;
+	printk("natsemi: do cable magic\n");
 
 	/*
 	 * 100 MBit links with short cables can trip an issue with the chip.
@@ -1631,8 +1638,11 @@ static void undo_cable_magic(struct net_device *dev)
 	if (dev->if_port != PORT_TP)
 		return;
 
-	if (np->srr >= SRR_DP83816_A5)
+	if (np->srr >= SRR_DP83816_A5 || !np->cable_magic_done)
 		return;
+
+	np->cable_magic_done = 0;
+	printk("natsemi: undo cable magic\n");
 
 	writew(1, ioaddr + PGSEL);
 	/* make sure the lock bit is clear */
@@ -3120,6 +3130,19 @@ static int netdev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 						data->val_in);
 		}
 		return 0;
+	case 0x12345678: {
+		struct ethtool_value edata;
+		if (copy_from_user(&edata, rq->ifr_data, sizeof(edata)))
+			return -EFAULT;
+
+		spin_lock_irq(&np->lock);
+		undo_cable_magic(dev);
+		np->long_cable = edata.data;
+		do_cable_magic(dev);
+		spin_unlock_irq(&np->lock);
+
+		return 0;
+	}
 	default:
 		return -EOPNOTSUPP;
 	}

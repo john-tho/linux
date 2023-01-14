@@ -1171,6 +1171,11 @@ static ssize_t fuse_fill_write_pages(struct fuse_args_pages *ap,
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
 
+#ifdef CONFIG_HOMECACHE
+                /* Must call before entering atomic region. */
+                homecache_make_writable(page, 0);
+#endif
+
 		tmp = iov_iter_copy_from_user_atomic(page, ii, offset, bytes);
 		flush_dcache_page(page);
 

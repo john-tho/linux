@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015, Sony Mobile Communications AB.
- * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013, 2017 The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  */
 
 #include <linux/hwspinlock.h>
@@ -10,9 +19,9 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
-#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/soc/qcom/smem.h>
+#include <linux/kernel.h>
 
 /*
  * The Qualcomm shared memory system is a allocate only heap structure that
@@ -84,7 +93,7 @@
 #define SMEM_GLOBAL_HOST	0xfffe
 
 /* Max number of processors/hosts in a system */
-#define SMEM_HOST_COUNT		11
+#define SMEM_HOST_COUNT		9
 
 /**
   * struct smem_proc_comm - proc_comm communication struct (legacy)
@@ -271,10 +280,137 @@ struct qcom_smem {
 	struct platform_device *socinfo;
 
 	unsigned num_regions;
-	struct smem_region regions[];
+	struct smem_region regions[0];
 };
 
-static void *
+#define CPU_NAME_MAX_SIZE 16
+
+static int __init print_soc_version_info(void)
+{
+	int ret;
+	uint32_t minor_number = UINT_MAX;
+	uint32_t major_number = UINT_MAX;
+	uint32_t cpu_type = UINT_MAX;
+	char cpu_type_name[CPU_NAME_MAX_SIZE];
+
+	ret = of_property_read_u32(of_root, "soc_version_minor", &minor_number);
+	if (ret)
+		pr_err("Read of property:soc_version_minor from node failed\n");
+	else
+		minor_number = cpu_to_be32(minor_number);
+
+	ret = of_property_read_u32(of_root, "soc_version_major", &major_number);
+	if (ret)
+		pr_err("Read of property:soc_version_major from node failed\n");
+	else
+		major_number = cpu_to_be32(major_number);
+
+	ret = of_property_read_u32(of_root, "cpu_type", &cpu_type);
+	if (ret)
+		pr_err("Read of property:cpu_type from node failed\n");
+	else
+		cpu_type = cpu_to_be32(cpu_type);
+
+	switch (cpu_type) {
+	case 272:
+		strlcpy(cpu_type_name, "IPQ4018", CPU_NAME_MAX_SIZE);
+		break;
+	case 273:
+		strlcpy(cpu_type_name, "IPQ4019", CPU_NAME_MAX_SIZE);
+		break;
+	case 287:
+		strlcpy(cpu_type_name, "IPQ4028", CPU_NAME_MAX_SIZE);
+		break;
+	case 288:
+		strlcpy(cpu_type_name, "IPQ4029", CPU_NAME_MAX_SIZE);
+		break;
+	case 201:
+		strlcpy(cpu_type_name, "IPQ8062", CPU_NAME_MAX_SIZE);
+		break;
+	case 202:
+		strlcpy(cpu_type_name, "IPQ8064", CPU_NAME_MAX_SIZE);
+		break;
+	case 203:
+		strlcpy(cpu_type_name, "IPQ8066", CPU_NAME_MAX_SIZE);
+		break;
+	case 204:
+		strlcpy(cpu_type_name, "IPQ8068", CPU_NAME_MAX_SIZE);
+		break;
+	case 280:
+		strlcpy(cpu_type_name, "IPQ8065", CPU_NAME_MAX_SIZE);
+		break;
+	case 281:
+		strlcpy(cpu_type_name, "IPQ8069", CPU_NAME_MAX_SIZE);
+		break;
+	case 323:
+		strlcpy(cpu_type_name, "IPQ8074", CPU_NAME_MAX_SIZE);
+		break;
+	case 342:
+		strlcpy(cpu_type_name, "IPQ8072", CPU_NAME_MAX_SIZE);
+		break;
+	case 343:
+		strlcpy(cpu_type_name, "IPQ8076", CPU_NAME_MAX_SIZE);
+		break;
+	case 344:
+		strlcpy(cpu_type_name, "IPQ8078", CPU_NAME_MAX_SIZE);
+		break;
+	case 375:
+		strlcpy(cpu_type_name, "IPQ8070", CPU_NAME_MAX_SIZE);
+		break;
+	case 376:
+		strlcpy(cpu_type_name, "IPQ8071", CPU_NAME_MAX_SIZE);
+		break;
+	case 389:
+		strlcpy(cpu_type_name, "IPQ8072A", CPU_NAME_MAX_SIZE);
+		break;
+	case 390:
+		strlcpy(cpu_type_name, "IPQ8074A", CPU_NAME_MAX_SIZE);
+		break;
+	case 391:
+		strlcpy(cpu_type_name, "IPQ8076A", CPU_NAME_MAX_SIZE);
+		break;
+	case 392:
+		strlcpy(cpu_type_name, "IPQ8078A", CPU_NAME_MAX_SIZE);
+		break;
+	case 395:
+		strlcpy(cpu_type_name, "IPQ8070A", CPU_NAME_MAX_SIZE);
+		break;
+	case 396:
+		strlcpy(cpu_type_name, "IPQ8071A", CPU_NAME_MAX_SIZE);
+		break;
+	case 397:
+		strlcpy(cpu_type_name, "IPQ8172", CPU_NAME_MAX_SIZE);
+		break;
+	case 398:
+		strlcpy(cpu_type_name, "IPQ8173", CPU_NAME_MAX_SIZE);
+		break;
+	case 399:
+		strlcpy(cpu_type_name, "IPQ8174", CPU_NAME_MAX_SIZE);
+		break;
+	case 402:
+		strlcpy(cpu_type_name, "IPQ6018", CPU_NAME_MAX_SIZE);
+		break;
+	case 403:
+		strlcpy(cpu_type_name, "IPQ6028", CPU_NAME_MAX_SIZE);
+		break;
+	case 421:
+		strlcpy(cpu_type_name, "IPQ6000", CPU_NAME_MAX_SIZE);
+		break;
+	case 422:
+		strlcpy(cpu_type_name, "IPQ6010", CPU_NAME_MAX_SIZE);
+		break;
+	default:
+		strlcpy(cpu_type_name, "unavail", CPU_NAME_MAX_SIZE);
+		break;
+	}
+
+	pr_info("CPU: %s, SoC Version: %u.%u\n", cpu_type_name,
+		major_number, minor_number);
+
+	return 0;
+}
+
+static struct smem_private_entry *
 phdr_to_last_uncached_entry(struct smem_partition_header *phdr)
 {
 	void *p = phdr;
@@ -282,18 +418,15 @@ phdr_to_last_uncached_entry(struct smem_partition_header *phdr)
 	return p + le32_to_cpu(phdr->offset_free_uncached);
 }
 
-static struct smem_private_entry *
-phdr_to_first_cached_entry(struct smem_partition_header *phdr,
+static void *phdr_to_first_cached_entry(struct smem_partition_header *phdr,
 					size_t cacheline)
 {
 	void *p = phdr;
-	struct smem_private_entry *e;
 
-	return p + le32_to_cpu(phdr->size) - ALIGN(sizeof(*e), cacheline);
+	return p + le32_to_cpu(phdr->size) - ALIGN(sizeof(*phdr), cacheline);
 }
 
-static void *
-phdr_to_last_cached_entry(struct smem_partition_header *phdr)
+static void *phdr_to_last_cached_entry(struct smem_partition_header *phdr)
 {
 	void *p = phdr;
 
@@ -359,8 +492,13 @@ static int qcom_smem_alloc_private(struct qcom_smem *smem,
 	cached = phdr_to_last_cached_entry(phdr);
 
 	while (hdr < end) {
-		if (hdr->canary != SMEM_PRIVATE_CANARY)
-			goto bad_canary;
+		if (hdr->canary != SMEM_PRIVATE_CANARY) {
+			dev_err(smem->dev,
+				"Found invalid canary in hosts %d:%d partition\n",
+				phdr->host0, phdr->host1);
+			return -EINVAL;
+		}
+
 		if (le16_to_cpu(hdr->item) == item)
 			return -EEXIST;
 
@@ -369,7 +507,7 @@ static int qcom_smem_alloc_private(struct qcom_smem *smem,
 
 	/* Check that we don't grow into the cached region */
 	alloc_size = sizeof(*hdr) + ALIGN(size, 8);
-	if ((void *)hdr + alloc_size > cached) {
+	if ((void *)hdr + alloc_size >= cached) {
 		dev_err(smem->dev, "Out of memory\n");
 		return -ENOSPC;
 	}
@@ -389,11 +527,6 @@ static int qcom_smem_alloc_private(struct qcom_smem *smem,
 	le32_add_cpu(&phdr->offset_free_uncached, alloc_size);
 
 	return 0;
-bad_canary:
-	dev_err(smem->dev, "Found invalid canary in hosts %hu:%hu partition\n",
-		le16_to_cpu(phdr->host0), le16_to_cpu(phdr->host1));
-
-	return -EINVAL;
 }
 
 static int qcom_smem_alloc_global(struct qcom_smem *smem,
@@ -483,7 +616,7 @@ static void *qcom_smem_get_global(struct qcom_smem *smem,
 				  size_t *size)
 {
 	struct smem_header *header;
-	struct smem_region *region;
+	struct smem_region *area;
 	struct smem_global_entry *entry;
 	u32 aux_base;
 	unsigned i;
@@ -496,12 +629,12 @@ static void *qcom_smem_get_global(struct qcom_smem *smem,
 	aux_base = le32_to_cpu(entry->aux_base) & AUX_BASE_MASK;
 
 	for (i = 0; i < smem->num_regions; i++) {
-		region = &smem->regions[i];
+		area = &smem->regions[i];
 
-		if (region->aux_base == aux_base || !aux_base) {
+		if (area->aux_base == aux_base || !aux_base) {
 			if (size != NULL)
 				*size = le32_to_cpu(entry->size);
-			return region->virt_base + le32_to_cpu(entry->offset);
+			return area->virt_base + le32_to_cpu(entry->offset);
 		}
 	}
 
@@ -557,8 +690,8 @@ static void *qcom_smem_get_private(struct qcom_smem *smem,
 	return ERR_PTR(-ENOENT);
 
 invalid_canary:
-	dev_err(smem->dev, "Found invalid canary in hosts %hu:%hu partition\n",
-			le16_to_cpu(phdr->host0), le16_to_cpu(phdr->host1));
+	dev_err(smem->dev, "Found invalid canary in hosts %d:%d partition\n",
+			phdr->host0, phdr->host1);
 
 	return ERR_PTR(-EINVAL);
 }
@@ -689,7 +822,7 @@ static struct smem_ptable *qcom_smem_get_ptable(struct qcom_smem *smem)
 
 	ptable = smem->regions[0].virt_base + smem->regions[0].size - SZ_4K;
 	if (memcmp(ptable->magic, SMEM_PTABLE_MAGIC, sizeof(ptable->magic)))
-		return ERR_PTR(-ENOENT);
+		return NULL;
 
 	version = le32_to_cpu(ptable->version);
 	if (version != 1) {
@@ -700,7 +833,7 @@ static struct smem_ptable *qcom_smem_get_ptable(struct qcom_smem *smem)
 	return ptable;
 }
 
-static u32 qcom_smem_get_item_count(struct qcom_smem *smem)
+static u32 qcom_smem_get_dynamic_item(struct qcom_smem *smem)
 {
 	struct smem_ptable *ptable;
 	struct smem_info *info;
@@ -716,96 +849,67 @@ static u32 qcom_smem_get_item_count(struct qcom_smem *smem)
 	return le16_to_cpu(info->num_items);
 }
 
-/*
- * Validate the partition header for a partition whose partition
- * table entry is supplied.  Returns a pointer to its header if
- * valid, or a null pointer otherwise.
- */
-static struct smem_partition_header *
-qcom_smem_partition_header(struct qcom_smem *smem,
-		struct smem_ptable_entry *entry, u16 host0, u16 host1)
-{
-	struct smem_partition_header *header;
-	u32 size;
-
-	header = smem->regions[0].virt_base + le32_to_cpu(entry->offset);
-
-	if (memcmp(header->magic, SMEM_PART_MAGIC, sizeof(header->magic))) {
-		dev_err(smem->dev, "bad partition magic %02x %02x %02x %02x\n",
-			header->magic[0], header->magic[1],
-			header->magic[2], header->magic[3]);
-		return NULL;
-	}
-
-	if (host0 != le16_to_cpu(header->host0)) {
-		dev_err(smem->dev, "bad host0 (%hu != %hu)\n",
-				host0, le16_to_cpu(header->host0));
-		return NULL;
-	}
-	if (host1 != le16_to_cpu(header->host1)) {
-		dev_err(smem->dev, "bad host1 (%hu != %hu)\n",
-				host1, le16_to_cpu(header->host1));
-		return NULL;
-	}
-
-	size = le32_to_cpu(header->size);
-	if (size != le32_to_cpu(entry->size)) {
-		dev_err(smem->dev, "bad partition size (%u != %u)\n",
-			size, le32_to_cpu(entry->size));
-		return NULL;
-	}
-
-	if (le32_to_cpu(header->offset_free_uncached) > size) {
-		dev_err(smem->dev, "bad partition free uncached (%u > %u)\n",
-			le32_to_cpu(header->offset_free_uncached), size);
-		return NULL;
-	}
-
-	return header;
-}
-
 static int qcom_smem_set_global_partition(struct qcom_smem *smem)
 {
 	struct smem_partition_header *header;
-	struct smem_ptable_entry *entry;
+	struct smem_ptable_entry *entry = NULL;
 	struct smem_ptable *ptable;
-	bool found = false;
+	u32 host0, host1, size;
 	int i;
+
+	ptable = qcom_smem_get_ptable(smem);
+	if (IS_ERR_OR_NULL(ptable))
+		return -EINVAL;
+
+	for (i = 0; i < le32_to_cpu(ptable->num_entries); i++) {
+		entry = &ptable->entry[i];
+		host0 = le16_to_cpu(entry->host0);
+		host1 = le16_to_cpu(entry->host1);
+
+		if (host0 == SMEM_GLOBAL_HOST && host0 == host1)
+			break;
+	}
+
+	if (!entry) {
+		dev_err(smem->dev, "Missing entry for global partition\n");
+		return -EINVAL;
+	}
+
+	if (!le32_to_cpu(entry->offset) || !le32_to_cpu(entry->size)) {
+		dev_err(smem->dev, "Invalid entry for global partition\n");
+		return -EINVAL;
+	}
 
 	if (smem->global_partition) {
 		dev_err(smem->dev, "Already found the global partition\n");
 		return -EINVAL;
 	}
 
-	ptable = qcom_smem_get_ptable(smem);
-	if (IS_ERR(ptable))
-		return PTR_ERR(ptable);
+	header = smem->regions[0].virt_base + le32_to_cpu(entry->offset);
+	host0 = le16_to_cpu(header->host0);
+	host1 = le16_to_cpu(header->host1);
 
-	for (i = 0; i < le32_to_cpu(ptable->num_entries); i++) {
-		entry = &ptable->entry[i];
-		if (!le32_to_cpu(entry->offset))
-			continue;
-		if (!le32_to_cpu(entry->size))
-			continue;
-
-		if (le16_to_cpu(entry->host0) != SMEM_GLOBAL_HOST)
-			continue;
-
-		if (le16_to_cpu(entry->host1) == SMEM_GLOBAL_HOST) {
-			found = true;
-			break;
+	if (memcmp(header->magic, SMEM_PART_MAGIC, sizeof(header->magic))) {
+		dev_err(smem->dev, "Global partition has invalid magic\n");
+		return -EINVAL;
 		}
-	}
 
-	if (!found) {
-		dev_err(smem->dev, "Missing entry for global partition\n");
+	if (host0 != SMEM_GLOBAL_HOST && host1 != SMEM_GLOBAL_HOST) {
+		dev_err(smem->dev, "Global partition hosts are invalid\n");
 		return -EINVAL;
 	}
 
-	header = qcom_smem_partition_header(smem, entry,
-				SMEM_GLOBAL_HOST, SMEM_GLOBAL_HOST);
-	if (!header)
+	if (le32_to_cpu(header->size) != le32_to_cpu(entry->size)) {
+		dev_err(smem->dev, "Global partition has invalid size\n");
 		return -EINVAL;
+	}
+
+	size = le32_to_cpu(header->offset_free_uncached);
+	if (size > le32_to_cpu(header->size)) {
+		dev_err(smem->dev,
+			"Global partition has invalid free pointer\n");
+		return -EINVAL;
+	}
 
 	smem->global_partition = header;
 	smem->global_cacheline = le32_to_cpu(entry->cacheline);
@@ -813,49 +917,87 @@ static int qcom_smem_set_global_partition(struct qcom_smem *smem)
 	return 0;
 }
 
-static int
-qcom_smem_enumerate_partitions(struct qcom_smem *smem, u16 local_host)
+static int qcom_smem_enumerate_partitions(struct qcom_smem *smem,
+					  unsigned int local_host)
 {
 	struct smem_partition_header *header;
 	struct smem_ptable_entry *entry;
 	struct smem_ptable *ptable;
 	unsigned int remote_host;
-	u16 host0, host1;
+	u32 host0, host1;
 	int i;
 
 	ptable = qcom_smem_get_ptable(smem);
-	if (IS_ERR(ptable))
+	if (IS_ERR_OR_NULL(ptable))
 		return PTR_ERR(ptable);
 
 	for (i = 0; i < le32_to_cpu(ptable->num_entries); i++) {
 		entry = &ptable->entry[i];
+		host0 = le16_to_cpu(entry->host0);
+		host1 = le16_to_cpu(entry->host1);
+
+		if (host0 != local_host && host1 != local_host)
+			continue;
+
 		if (!le32_to_cpu(entry->offset))
 			continue;
+
 		if (!le32_to_cpu(entry->size))
 			continue;
 
-		host0 = le16_to_cpu(entry->host0);
-		host1 = le16_to_cpu(entry->host1);
 		if (host0 == local_host)
 			remote_host = host1;
-		else if (host1 == local_host)
-			remote_host = host0;
 		else
-			continue;
+			remote_host = host0;
 
 		if (remote_host >= SMEM_HOST_COUNT) {
-			dev_err(smem->dev, "bad host %hu\n", remote_host);
+			dev_err(smem->dev,
+				"Invalid remote host %d\n",
+				remote_host);
 			return -EINVAL;
 		}
 
 		if (smem->partitions[remote_host]) {
-			dev_err(smem->dev, "duplicate host %hu\n", remote_host);
+			dev_err(smem->dev,
+				"Already found a partition for host %d\n",
+				remote_host);
 			return -EINVAL;
 		}
 
-		header = qcom_smem_partition_header(smem, entry, host0, host1);
-		if (!header)
+		header = smem->regions[0].virt_base + le32_to_cpu(entry->offset);
+		host0 = le16_to_cpu(header->host0);
+		host1 = le16_to_cpu(header->host1);
+
+		if (memcmp(header->magic, SMEM_PART_MAGIC,
+			    sizeof(header->magic))) {
+			dev_err(smem->dev,
+				"Partition %d has invalid magic\n", i);
 			return -EINVAL;
+		}
+
+		if (host0 != local_host && host1 != local_host) {
+			dev_err(smem->dev,
+				"Partition %d hosts are invalid\n", i);
+			return -EINVAL;
+		}
+
+		if (host0 != remote_host && host1 != remote_host) {
+			dev_err(smem->dev,
+				"Partition %d hosts are invalid\n", i);
+			return -EINVAL;
+		}
+
+		if (le32_to_cpu(header->size) != le32_to_cpu(entry->size)) {
+			dev_err(smem->dev,
+				"Partition %d has invalid size\n", i);
+			return -EINVAL;
+		}
+
+		if (le32_to_cpu(header->offset_free_uncached) > le32_to_cpu(header->size)) {
+			dev_err(smem->dev,
+				"Partition %d has invalid free pointer\n", i);
+			return -EINVAL;
+		}
 
 		smem->partitions[remote_host] = header;
 		smem->cacheline[remote_host] = le32_to_cpu(entry->cacheline);
@@ -869,7 +1011,6 @@ static int qcom_smem_map_memory(struct qcom_smem *smem, struct device *dev,
 {
 	struct device_node *np;
 	struct resource r;
-	resource_size_t size;
 	int ret;
 
 	np = of_parse_phandle(dev->of_node, name, 0);
@@ -882,13 +1023,13 @@ static int qcom_smem_map_memory(struct qcom_smem *smem, struct device *dev,
 	of_node_put(np);
 	if (ret)
 		return ret;
-	size = resource_size(&r);
 
-	smem->regions[i].virt_base = devm_ioremap_wc(dev, r.start, size);
+	smem->regions[i].aux_base = (u32)r.start;
+	smem->regions[i].size = resource_size(&r);
+	smem->regions[i].virt_base = devm_ioremap(dev, r.start,
+							  resource_size(&r));
 	if (!smem->regions[i].virt_base)
 		return -ENOMEM;
-	smem->regions[i].aux_base = (u32)r.start;
-	smem->regions[i].size = size;
 
 	return 0;
 }
@@ -902,6 +1043,10 @@ static int qcom_smem_probe(struct platform_device *pdev)
 	int hwlock_id;
 	u32 version;
 	int ret;
+
+	hwlock_id = of_hwspin_lock_get_id(pdev->dev.of_node, 0);
+	if (hwlock_id < 0)
+		return -EPROBE_DEFER;
 
 	num_regions = 1;
 	if (of_find_property(pdev->dev.of_node, "qcom,rpm-msg-ram", NULL))
@@ -936,7 +1081,7 @@ static int qcom_smem_probe(struct platform_device *pdev)
 		ret = qcom_smem_set_global_partition(smem);
 		if (ret < 0)
 			return ret;
-		smem->item_count = qcom_smem_get_item_count(smem);
+		smem->item_count = qcom_smem_get_dynamic_item(smem);
 		break;
 	case SMEM_GLOBAL_HEAP_VERSION:
 		smem->item_count = SMEM_ITEM_COUNT;
@@ -946,17 +1091,9 @@ static int qcom_smem_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	BUILD_BUG_ON(SMEM_HOST_APPS >= SMEM_HOST_COUNT);
 	ret = qcom_smem_enumerate_partitions(smem, SMEM_HOST_APPS);
-	if (ret < 0 && ret != -ENOENT)
+	if (ret < 0)
 		return ret;
-
-	hwlock_id = of_hwspin_lock_get_id(pdev->dev.of_node, 0);
-	if (hwlock_id < 0) {
-		if (hwlock_id != -EPROBE_DEFER)
-			dev_err(&pdev->dev, "failed to retrieve hwlock\n");
-		return hwlock_id;
-	}
 
 	smem->hwlock = hwspin_lock_request_specific(hwlock_id);
 	if (!smem->hwlock)
@@ -964,19 +1101,11 @@ static int qcom_smem_probe(struct platform_device *pdev)
 
 	__smem = smem;
 
-	smem->socinfo = platform_device_register_data(&pdev->dev, "qcom-socinfo",
-						      PLATFORM_DEVID_NONE, NULL,
-						      0);
-	if (IS_ERR(smem->socinfo))
-		dev_dbg(&pdev->dev, "failed to register socinfo device\n");
-
 	return 0;
 }
 
 static int qcom_smem_remove(struct platform_device *pdev)
 {
-	platform_device_unregister(__smem->socinfo);
-
 	hwspin_lock_free(__smem->hwlock);
 	__smem = NULL;
 
@@ -1001,6 +1130,7 @@ static struct platform_driver qcom_smem_driver = {
 
 static int __init qcom_smem_init(void)
 {
+	print_soc_version_info();
 	return platform_driver_register(&qcom_smem_driver);
 }
 arch_initcall(qcom_smem_init);

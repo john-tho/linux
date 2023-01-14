@@ -796,7 +796,9 @@ static resource_size_t calculate_iosize(resource_size_t size,
 	 * To be fixed in 2.5: we should have sort of HAVE_ISA flag in the
 	 * struct pci_bus.
 	 */
-#if defined(CONFIG_ISA) || defined(CONFIG_EISA)
+	/* NOTE: all io resources get aligned to 1024 with maximum size 256,
+	   so we should increase IO space 4 times even on RB800 */
+#if defined(CONFIG_ISA) || defined(CONFIG_EISA) || defined(CONFIG_MIPS_MIKROTIK) || defined(CONFIG_RB_PCI) || defined(CONFIG_RB_PPC)
 	size = (size & 0xff) + ((size & ~0xffUL) << 2);
 #endif
 	size = size + size1;

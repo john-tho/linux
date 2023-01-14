@@ -1038,6 +1038,7 @@ int devinet_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr)
 		break;
 
 	case SIOCSIFFLAGS:
+	case SIOCSPROXYARP:
 		ret = -EPERM;
 		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 			goto out;
@@ -1100,7 +1101,8 @@ int devinet_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr)
 	}
 
 	ret = -EADDRNOTAVAIL;
-	if (!ifa && cmd != SIOCSIFADDR && cmd != SIOCSIFFLAGS)
+	if (!ifa && cmd != SIOCSIFADDR && cmd != SIOCSIFFLAGS
+	    && cmd != SIOCSPROXYARP)
 		goto done;
 
 	switch (cmd) {
@@ -1135,6 +1137,31 @@ int devinet_ioctl(struct net *net, unsigned int cmd, struct ifreq *ifr)
 			break;
 		}
 		ret = dev_change_flags(dev, ifr->ifr_flags, NULL);
+		break;
+
+	case SIOCSPROXYARP:
+		ret = -EINVAL;
+		if (in_dev) {
+			ret = 0;
+			if (ifr->ifr_flags == 2) { // arp=proxy-arp
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP, 1);
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP_PVLAN, 0);
+			    IN_DEV_CONF_SET(in_dev, ARP_IGNORE, 0);
+			    IN_DEV_CONF_SET(in_dev, ARP_ANNOUNCE, 0);
+			}
+			else if (ifr->ifr_flags == 4) { // arp=local-proxy-arp
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP, 0);
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP_PVLAN, 1);
+			    IN_DEV_CONF_SET(in_dev, ARP_IGNORE, 0);
+			    IN_DEV_CONF_SET(in_dev, ARP_ANNOUNCE, 0);
+			}
+			else {
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP, 0);
+			    IN_DEV_CONF_SET(in_dev, PROXY_ARP_PVLAN, 0);
+			    IN_DEV_CONF_SET(in_dev, ARP_IGNORE, 1);
+			    IN_DEV_CONF_SET(in_dev, ARP_ANNOUNCE, 2);
+			}
+		}
 		break;
 
 	case SIOCSIFADDR:	/* Set interface address (and family) */
@@ -1384,7 +1411,10 @@ static __be32 confirm_addr_indev(struct in_device *in_dev, __be32 dst,
 				break;
 		}
 		if (!same) {
-			same = (!local || inet_ifa_match(local, ifa)) &&
+			/* match iface local address by local as well
+			   to support ethernets with /32 addresses */
+			same = (!local || inet_ifa_match(local, ifa)
+				|| local == ifa->ifa_local) &&
 				(!dst || inet_ifa_match(dst, ifa));
 			if (same && addr) {
 				if (local || !dst)
@@ -2598,6 +2628,7 @@ static void __devinet_sysctl_unregister(struct net *net,
 
 static int devinet_sysctl_register(struct in_device *idev)
 {
+#if 0
 	int err;
 
 	if (!sysctl_dev_name_is_allowed(idev->dev->name))
@@ -2611,14 +2642,19 @@ static int devinet_sysctl_register(struct in_device *idev)
 	if (err)
 		neigh_sysctl_unregister(idev->arp_parms);
 	return err;
+#else
+	return 0;
+#endif
 }
 
 static void devinet_sysctl_unregister(struct in_device *idev)
 {
+#if 0
 	struct net *net = dev_net(idev->dev);
 
 	__devinet_sysctl_unregister(net, &idev->cnf, idev->dev->ifindex);
 	neigh_sysctl_unregister(idev->arp_parms);
+#endif
 }
 
 static struct ctl_table ctl_forward_entry[] = {

@@ -100,8 +100,8 @@ static void vss_timeout_func(struct work_struct *dummy)
 
 static void vss_register_done(void)
 {
-	hv_poll_channel(vss_transaction.recv_channel, vss_poll_wrapper);
 	pr_debug("VSS: userspace daemon registered\n");
+	hv_poll_channel(vss_transaction.recv_channel, vss_poll_wrapper);
 }
 
 static int vss_handle_handshake(struct hv_vss_msg *vss_msg)
@@ -217,13 +217,6 @@ static void vss_handle_request(struct work_struct *dummy)
 	case VSS_OP_THAW:
 	case VSS_OP_FREEZE:
 	case VSS_OP_HOT_BACKUP:
-		if (vss_transaction.state < HVUTIL_READY) {
-			/* Userspace is not registered yet */
-			pr_debug("VSS: Not ready for request.\n");
-			vss_respond_to_host(HV_E_FAIL);
-			return;
-		}
-
 		pr_debug("VSS: Received request for op code: %d\n",
 			vss_transaction.msg->vss_hdr.operation);
 		vss_transaction.state = HVUTIL_HOSTMSG_RECEIVED;
@@ -295,7 +288,7 @@ void hv_vss_onchannelcallback(void *context)
 
 	struct icmsg_hdr *icmsghdrp;
 
-	if (vss_transaction.state > HVUTIL_READY)
+	if (vss_transaction.state != HVUTIL_READY)
 		return;
 
 	vmbus_recvpacket(channel, recv_buffer, HV_HYP_PAGE_SIZE * 2, &recvlen,

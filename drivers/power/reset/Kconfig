@@ -247,6 +247,13 @@ config SYSCON_REBOOT_MODE
 	  register, then the bootloader can read it to take different
 	  action according to the mode.
 
+config POWER_RESET_ALPINE
+	bool "Annapurna Labs Alpine reset driver"
+	depends on ARCH_ALPINE
+	depends on OF
+	help
+	  Reboot support for Annpurna Labs boards.
+
 config POWER_RESET_SC27XX
 	bool "Spreadtrum SC27xx PMIC power-off driver"
 	depends on MFD_SC27XX_PMIC || COMPILE_TEST

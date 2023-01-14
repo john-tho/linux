@@ -35,6 +35,7 @@
 #include <linux/types.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand_ecc.h>
+#include <linux/mtd/nand_ecc_mlc.h>
 #include <linux/mtd/nand_bch.h>
 #include <linux/interrupt.h>
 #include <linux/bitops.h>
@@ -49,24 +50,14 @@
 static int nand_ooblayout_ecc_sp(struct mtd_info *mtd, int section,
 				 struct mtd_oob_region *oobregion)
 {
-	struct nand_chip *chip = mtd_to_nand(mtd);
-	struct nand_ecc_ctrl *ecc = &chip->ecc;
-
-	if (section > 1)
-		return -ERANGE;
-
-	if (!section) {
-		oobregion->offset = 0;
-		if (mtd->oobsize == 16)
-			oobregion->length = 4;
-		else
+	if (section == 0) {
+		oobregion->offset = 8;
+		oobregion->length = 3;
+	} else if (section == 1) {
+		oobregion->offset = 13;
 			oobregion->length = 3;
 	} else {
-		if (mtd->oobsize == 8)
 			return -ERANGE;
-
-		oobregion->offset = 6;
-		oobregion->length = ecc->total - 4;
 	}
 
 	return 0;
@@ -75,21 +66,14 @@ static int nand_ooblayout_ecc_sp(struct mtd_info *mtd, int section,
 static int nand_ooblayout_free_sp(struct mtd_info *mtd, int section,
 				  struct mtd_oob_region *oobregion)
 {
-	if (section > 1)
-		return -ERANGE;
-
-	if (mtd->oobsize == 16) {
-		if (section)
-			return -ERANGE;
-
+	if (section == 0) {
+		oobregion->offset = 0;
 		oobregion->length = 8;
-		oobregion->offset = 8;
-	} else {
+	} else if (section == 1) {
+		oobregion->offset = 11;
 		oobregion->length = 2;
-		if (!section)
-			oobregion->offset = 3;
-		else
-			oobregion->offset = 6;
+	} else {
+		return -ERANGE;
 	}
 
 	return 0;
@@ -136,6 +120,82 @@ const struct mtd_ooblayout_ops nand_ooblayout_lp_ops = {
 	.free = nand_ooblayout_free_lp,
 };
 EXPORT_SYMBOL_GPL(nand_ooblayout_lp_ops);
+
+/*
+ * fake MLC layout
+ * used by yaffs to see correct oobfree amount (oobfree as in MLC layout)
+ * used for reading if data is written using slc ecc (eccpos as in SLC layout)
+ */
+static int nand_ooblayout_ecc_64_mlc(struct mtd_info *mtd, int section,
+				     struct mtd_oob_region *oobregion)
+{
+	if (section == 0) {
+		oobregion->offset = 40;
+		oobregion->length = 24;
+	} else {
+		return -ERANGE;
+	}
+
+	return 0;
+}
+
+static int nand_ooblayout_free_64_mlc(struct mtd_info *mtd, int section,
+				      struct mtd_oob_region *oobregion)
+{
+	if (section == 0) {
+		oobregion->offset = 2;
+		oobregion->length = 22;
+	} else {
+		return -ERANGE;
+	}
+
+	return 0;
+}
+
+const struct mtd_ooblayout_ops nand_ooblayout_64_mlc_ops = {
+	.ecc = nand_ooblayout_ecc_64_mlc,
+	.free = nand_ooblayout_free_64_mlc,
+};
+
+unsigned benand_no_swecc = 0;
+static int __init disable_benand_swecc(char *s) {
+    benand_no_swecc = 1;
+    if (s && *s == '=' && *(s + 1) == '2')
+	    benand_no_swecc = 2;
+    return 1;
+}
+__setup("benand_no_swecc", disable_benand_swecc);
+
+#if defined(__mips__) || defined(__powerpc__)
+int mlc_ecc_allowed = 0;
+#else
+int mlc_ecc_allowed = 1;
+#endif
+
+static int __init on_setup_mlc(char *str)
+{
+	mlc_ecc_allowed = (str[0] != '0');
+	return 1;
+}
+__setup("mlc=", on_setup_mlc);
+
+static void set_ecc_mlc(struct nand_chip *chip) {
+	chip->oob_poi[ECC_ID_OFFSET] = 0;
+}
+
+static int is_ecc_mlc(struct nand_chip *chip) {
+	int bits = 0;
+	unsigned char ecc_id;
+	if (chip->page_shift <= 9) return 0;	/* small page nand */
+
+	ecc_id = chip->oob_poi[ECC_ID_OFFSET];
+	if (ecc_id == 0) return 1;
+	if (ecc_id == 0xff) return 0;
+
+	for ( ; ecc_id; ecc_id >>= 1)
+		bits += ecc_id & 0x01;
+	return bits < 4;
+}
 
 /*
  * Support the old "large page" layout used for 1-bit Hamming ECC where ECC
@@ -503,6 +563,23 @@ static int nand_do_write_oob(struct nand_chip *chip, loff_t to,
 	return 0;
 }
 
+static int nand_block_bad_mlc(struct nand_chip *chip, loff_t ofs)
+{
+	struct mtd_info *mtd = nand_to_mtd(chip);
+
+	int res = nand_block_bad(chip, ofs);
+	if (res == 0) {
+		/*
+		 * MLC nand initially (from factory)
+		 * contains bad block info at last page within block
+		 */
+		ofs = ((ofs & ~(mtd->erasesize - 1)) +
+		       mtd->erasesize - mtd->writesize);
+		res = nand_block_bad(chip, ofs);
+	}
+	return res;
+}
+
 /**
  * nand_default_block_markbad - [DEFAULT] mark a block bad via bad block marker
  * @chip: NAND chip object
@@ -597,6 +674,16 @@ static int nand_block_markbad_lowlevel(struct nand_chip *chip, loff_t ofs)
 		if (ret)
 			return ret;
 
+		if (!nand_is_slc(chip)) {
+			/*
+			 * MLC nand supports only one write to page after erase
+			 * make sure our write succeeds
+			 * by erasing whole block before write
+			 */
+			int page = (int)(ofs >> chip->page_shift);
+			ret = nand_erase_op(chip, (page & chip->pagemask) >>
+					    (chip->phys_erase_shift - chip->page_shift));
+		}
 		ret = nand_markbad_bbm(chip, ofs);
 		nand_release_device(chip);
 	}
@@ -612,6 +699,39 @@ static int nand_block_markbad_lowlevel(struct nand_chip *chip, loff_t ofs)
 		mtd->ecc_stats.badblocks++;
 
 	return ret;
+}
+
+static int nand_check_hwecc_status(struct mtd_info *mtd)
+{
+	struct nand_chip *chip = mtd_to_nand(mtd);
+	unsigned failed = mtd->ecc_stats.failed;
+
+	int bitflips = toshiba_nand_benand_eccstatus(chip);
+
+	if (failed != mtd->ecc_stats.failed) {
+		/* second subpage write may trigger this error in oob area
+		   subpages:
+		   000..3ff, hwecc 1000..101f, swecc 1050..105b (from subpage 3)
+		   400..7ff, hwecc 1020..103f, swecc 105c..1067 (subpages 3 & 4)
+		   800..bff, hwecc 1040..105f, swecc 1068..1073 (subpage 4)
+		   c00..fff, hwecc 1060..107f, swecc 1074..107f (subpage 4)
+		   1st subpage write calculates hwecc on oob areas 1,3
+		   2nd subpage write alters areas 2,3,4, hwecc calc on 2,4
+		   3rd subpage write alters areas 3,4, hwecc not done!
+		   4th subpage write alters area 4, hwecc not done!
+		   at the end of day hwecc is correct on subpages 1,2
+		   and is not correct for subpages 3,4
+
+		   To workaround this, we use swecc in case if hwecc fails.
+		   Later, swecc can be disabled completely,
+		   if backup RouterBOOT version is new enough.
+		   XXX: use swecc in page, if 1st part of it used swecc!
+		   do not use swecc in page, if 1st part of it did not
+		*/
+		mtd->ecc_stats.failed = failed;
+		return -ENOENT;
+	}
+	return bitflips;
 }
 
 /**
@@ -2709,6 +2829,26 @@ static int nand_read_page_swecc(struct nand_chip *chip, uint8_t *buf,
 
 	chip->ecc.read_page_raw(chip, buf, 1, page);
 
+	if (chip->options & NAND_HAS_HW_ECC) {
+		int bitflips = nand_check_hwecc_status(mtd);
+		if (bitflips >= 0)
+			return bitflips;
+		// hwecc gives error, try swecc
+	}
+
+	if (is_ecc_mlc(chip)) {
+		unsigned char *ecc = chip->oob_poi + 24;
+		int steps = mtd->writesize / 512;
+		for (i = 0; i < steps; ++i, p += 0x200, ecc += 10) {
+			int stat = nand_correct_data_mlc(p, ecc);
+			if (stat < 0)
+				mtd->ecc_stats.failed++;
+			else
+				mtd->ecc_stats.corrected += stat;
+		}
+		return 0;
+	}
+
 	for (i = 0; eccsteps; eccsteps--, i += eccbytes, p += eccsize)
 		chip->ecc.calculate(chip, p, &ecc_calc[i]);
 
@@ -2771,6 +2911,13 @@ static int nand_read_subpage(struct nand_chip *chip, uint32_t data_offs,
 	ret = nand_read_page_op(chip, page, data_col_addr, p, datafrag_len);
 	if (ret)
 		return ret;
+
+	if (chip->options & NAND_HAS_HW_ECC) {
+		int bitflips = nand_check_hwecc_status(mtd);
+		if (bitflips >= 0)
+			return bitflips;
+		// hwecc gives error, try swecc
+	}
 
 	/* Calculate ECC */
 	for (i = 0; i < eccfrag_len ; i += chip->ecc.bytes, p += chip->ecc.size)
@@ -3210,13 +3357,17 @@ read_retry:
 				ret = chip->ecc.read_page_raw(chip, bufpoi,
 							      oob_required,
 							      page);
+#ifdef FIXME
+			/* disable subpage reads - not supported with mlc ecc */
 			else if (!aligned && NAND_HAS_SUBPAGE_READ(chip) &&
 				 !oob)
 				ret = chip->ecc.read_subpage(chip, col, bytes,
 							     bufpoi, page);
+#endif
 			else
 				ret = chip->ecc.read_page(chip, bufpoi,
 							  oob_required, page);
+
 			if (ret < 0) {
 				if (use_bufpoi)
 					/* Invalidate page cache */
@@ -3709,6 +3860,16 @@ static int nand_write_page_swecc(struct nand_chip *chip, const uint8_t *buf,
 	uint8_t *ecc_calc = chip->ecc.calc_buf;
 	const uint8_t *p = buf;
 
+	if (mtd->ooblayout == &nand_ooblayout_64_mlc_ops) {
+		unsigned char *ecc = chip->oob_poi + 24;
+		int steps = mtd->writesize / 512;
+		set_ecc_mlc(chip);
+		for (i = 0; i < steps; ++i, p += 0x200, ecc += 10) {
+			nand_calculate_ecc_mlc(p, ecc);
+		}
+		return chip->ecc.write_page_raw(chip, buf, 1, page);
+	}
+
 	/* Software ECC calculation */
 	for (i = 0; eccsteps; eccsteps--, i += eccbytes, p += eccsize)
 		chip->ecc.calculate(chip, p, &ecc_calc[i]);
@@ -3954,7 +4115,7 @@ static int nand_write_page(struct nand_chip *chip, uint32_t offset,
  * NAND write with ECC.
  */
 static int nand_do_write_ops(struct nand_chip *chip, loff_t to,
-			     struct mtd_oob_ops *ops)
+			     struct mtd_oob_ops *ops, int reset)
 {
 	struct mtd_info *mtd = nand_to_mtd(chip);
 	int chipnr, realpage, page, column;
@@ -3984,8 +4145,11 @@ static int nand_do_write_ops(struct nand_chip *chip, loff_t to,
 	chipnr = (int)(to >> chip->chip_shift);
 	nand_select_target(chip, chipnr);
 
+	if (reset) nand_reset_op(chip);
+
 	/* Check, if it is write protected */
 	if (nand_check_wp(chip)) {
+		printk("WARNING: nand_write failed - write protected\n");
 		ret = -EIO;
 		goto err_out;
 	}
@@ -4030,13 +4194,13 @@ static int nand_do_write_ops(struct nand_chip *chip, loff_t to,
 			memcpy(&wbuf[column], buf, bytes);
 		}
 
+		/* We still need to erase leftover OOB data */
+		memset(chip->oob_poi, 0xff, mtd->oobsize);
+
 		if (unlikely(oob)) {
 			size_t len = min(oobwritelen, oobmaxlen);
 			oob = nand_fill_oob(chip, oob, len, ops);
 			oobwritelen -= len;
-		} else {
-			/* We still need to erase leftover OOB data */
-			memset(chip->oob_poi, 0xff, mtd->oobsize);
 		}
 
 		ret = nand_write_page(chip, column, bytes, wbuf,
@@ -4100,7 +4264,7 @@ static int panic_nand_write(struct mtd_info *mtd, loff_t to, size_t len,
 	ops.datbuf = (uint8_t *)buf;
 	ops.mode = MTD_OPS_PLACE_OOB;
 
-	ret = nand_do_write_ops(chip, to, &ops);
+	ret = nand_do_write_ops(chip, to, &ops, 0);
 
 	*retlen = ops.retlen;
 	return ret;
@@ -4137,7 +4301,7 @@ static int nand_write_oob(struct mtd_info *mtd, loff_t to,
 	if (!ops->datbuf)
 		ret = nand_do_write_oob(chip, to, ops);
 	else
-		ret = nand_do_write_ops(chip, to, ops);
+		ret = nand_do_write_ops(chip, to, ops, 0);
 
 out:
 	nand_release_device(chip);
@@ -4168,11 +4332,17 @@ int nand_erase_nand(struct nand_chip *chip, struct erase_info *instr,
 		    int allowbbt)
 {
 	int page, pages_per_block, ret, chipnr;
+	int erase_bad = 0;
 	loff_t len;
 
 	pr_debug("%s: start = 0x%012llx, len = %llu\n",
 			__func__, (unsigned long long)instr->addr,
 			(unsigned long long)instr->len);
+
+	if (instr->len == 0xDeadBeef) {
+		instr->len = (1 << chip->phys_erase_shift);
+		erase_bad = 1;
+	}
 
 	if (check_offs_len(chip, instr->addr, instr->len))
 		return -EINVAL;
@@ -4204,6 +4374,15 @@ int nand_erase_nand(struct nand_chip *chip, struct erase_info *instr,
 	len = instr->len;
 
 	while (len) {
+		/*
+		 * try to erase bad block
+		 */
+		if (erase_bad && chip->bbt) {
+			loff_t ofs = ((loff_t) page) << chip->page_shift;
+			int block = ofs >> chip->bbt_erase_shift;
+			chip->bbt[block / 4] &= ~(0x03 << ((block & 0x03) * 2));
+		}
+
 		/* Check if we have a bad block, we do not erase bad blocks! */
 		if (nand_block_checkbad(chip, ((loff_t) page) <<
 					chip->page_shift, allowbbt)) {
@@ -4690,6 +4869,8 @@ static int nand_detect(struct nand_chip *chip, struct nand_flash_dev *type)
 	 * not match, ignore the device completely.
 	 */
 
+	nand_reset_op(chip);
+
 	/* Read entire ID string */
 	ret = nand_readid_op(chip, 0, id_data, sizeof(chip->id.data));
 	if (ret)
@@ -4757,10 +4938,12 @@ static int nand_detect(struct nand_chip *chip, struct nand_flash_dev *type)
 	if (!chip->parameters.model)
 		return -ENOMEM;
 
-	if (!type->pagesize)
+	if (!type->pagesize) {
+		chip->id.data[6] = 0;		// XXX: force old style for K9F4G08U0B
 		nand_manufacturer_detect(chip);
-	else
+	} else {
 		nand_decode_id(chip, type);
+	}
 
 	/* Get chip options */
 	chip->options |= type->options;
@@ -4817,6 +5000,10 @@ ident_done:
 
 	nand_legacy_adjust_cmdfunc(chip);
 
+	/* Check for problematic TC58BVG0S3H BENAND support in old RouterBOOT */
+	if (benand_no_swecc == 1 && dev_id == 0xf1)
+		benand_no_swecc = 0;
+
 	pr_info("device found, Manufacturer ID: 0x%02x, Chip ID: 0x%02x\n",
 		maf_id, dev_id);
 	pr_info("%s %s\n", nand_manufacturer_name(manufacturer),
@@ -4830,6 +5017,47 @@ free_detect_allocation:
 	kfree(chip->parameters.model);
 
 	return ret;
+}
+
+static int nand_read_fact(struct mtd_info *mtd, loff_t from,
+			  size_t len, size_t *retlen, u_char *buf) {
+	struct nand_chip *chip = mtd_to_nand(mtd);
+
+	if (from == 0) {
+		/* return nand id */
+		*retlen = min((int)len, max(4, chip->id.len));
+		memset(buf, 0, len);
+		memcpy(buf, chip->id.data, *retlen);
+	}
+	else if (chip->legacy.cmdfunc && chip->legacy.cmd_ctrl) {
+		/* custom read command */
+		const u_char *ptr;
+
+		nand_get_device(chip);
+		nand_select_target(chip, 0);
+
+		for (ptr = buf; *ptr != 0; ptr += 2) {
+			int cmd = *(ptr + 1) ?: NAND_CMD_NONE;
+			chip->legacy.cmd_ctrl(chip, cmd, *ptr);
+		}
+		++ptr;
+		chip->legacy.cmdfunc(chip, *ptr,
+				     (char)*(ptr + 2), (char)*(ptr + 1));
+		chip->legacy.read_buf(chip, buf, len);
+		*retlen = len;
+
+		nand_reset_op(chip);
+		nand_deselect_target(chip);
+		nand_select_target(chip, 0);
+		nand_reset_op(chip);
+
+		nand_deselect_target(chip);
+		nand_release_device(chip);
+	}
+	else {
+		return -ESRCH;
+	}
+	return 0;
 }
 
 static const char * const nand_ecc_modes[] = {
@@ -5063,6 +5291,7 @@ static int nand_scan_ident(struct nand_chip *chip, unsigned int maxchips,
 		}
 		nand_deselect_target(chip);
 	}
+	nand_deselect_target(chip);
 	if (i > 1)
 		pr_info("%d chips detected\n", i);
 
@@ -5097,6 +5326,7 @@ static int nand_set_ecc_soft_ops(struct nand_chip *chip)
 		ecc->read_page_raw = nand_read_page_raw;
 		ecc->write_page_raw = nand_write_page_raw;
 		ecc->read_oob = nand_read_oob_std;
+		if (!chip->ecc.write_oob)
 		ecc->write_oob = nand_write_oob_std;
 		if (!ecc->size)
 			ecc->size = 256;
@@ -5106,6 +5336,10 @@ static int nand_set_ecc_soft_ops(struct nand_chip *chip)
 		if (IS_ENABLED(CONFIG_MTD_NAND_ECC_SW_HAMMING_SMC))
 			ecc->options |= NAND_ECC_SOFT_HAMMING_SM_ORDER;
 
+		if ((chip->options & NAND_HAS_HW_ECC) && benand_no_swecc) {
+			pr_info("BENAND: disable software ecc\n");
+			ecc->write_page = nand_write_page_raw;
+		}
 		return 0;
 	case NAND_ECC_BCH:
 		if (!mtd_nand_has_bch()) {
@@ -5576,6 +5810,15 @@ static int nand_scan_tail(struct nand_chip *chip)
 		}
 	}
 
+	if (!nand_is_slc(chip)) {
+		if (!chip->legacy.block_bad)
+			chip->legacy.block_bad = nand_block_bad_mlc;
+		if (mlc_ecc_allowed)
+			mtd_set_ooblayout(mtd, &nand_ooblayout_64_mlc_ops);
+		else
+			printk("WARNING: mlc nand with slc ecc\n");
+	}
+
 	/*
 	 * Check ECC mode, default to software if 3byte/512byte hardware ECC is
 	 * selected and we have 256 byte pagesize fallback to software ECC
@@ -5795,6 +6038,8 @@ static int nand_scan_tail(struct nand_chip *chip)
 	mtd->_block_isbad = nand_block_isbad;
 	mtd->_block_markbad = nand_block_markbad;
 	mtd->_max_bad_blocks = nanddev_mtd_max_bad_blocks;
+	if (!mtd->_read_fact_prot_reg)
+		mtd->_read_fact_prot_reg = nand_read_fact;
 
 	/*
 	 * Initialize bitflip_threshold to its default prior scan_bbt() call.

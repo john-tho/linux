@@ -92,6 +92,10 @@ static const struct of_device_id whitelist[] __initconst = {
 	{ .compatible = "xlnx,zynq-7000", },
 	{ .compatible = "xlnx,zynqmp", },
 
+	{ .compatible = "qcom,ipq5018" },
+	{ .compatible = "qcom,ipq6018" },
+	{ .compatible = "qcom,ipq807x" },
+
 	{ }
 };
 

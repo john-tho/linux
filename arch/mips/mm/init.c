@@ -45,6 +45,10 @@
 #include <asm/tlb.h>
 #include <asm/fixmap.h>
 
+#ifdef CONFIG_MIPS_MIKROTIK
+#include <asm/rb/boards.h>
+#endif
+
 /*
  * We have up to 8 empty zeroed pages so we can map one of the right colour
  * when needed.	 This is necessary only on R4000 / R4400 SC and MC versions
@@ -402,6 +406,14 @@ void __init paging_init(void)
 #endif
 #ifdef CONFIG_ZONE_DMA
 	max_zone_pfns[ZONE_DMA] = MAX_DMA_PFN;
+#if defined(CONFIG_MIPS_MIKROTIK)
+	max_zone_pfns[ZONE_DMA] = max_low_pfn;
+	if (mips_machgroup == MACH_GROUP_MT_MMIPS) {
+		unsigned long pfn_192mb = PFN_DOWN((192 << 20));
+		if (max_low_pfn > pfn_192mb)
+			max_zone_pfns[ZONE_DMA] = pfn_192mb;
+	}
+#endif
 #endif
 #ifdef CONFIG_ZONE_DMA32
 	max_zone_pfns[ZONE_DMA32] = MAX_DMA32_PFN;

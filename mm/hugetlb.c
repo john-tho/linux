@@ -32,6 +32,9 @@
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/tlb.h>
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
 
 #include <linux/io.h>
 #include <linux/hugetlb.h>
@@ -1151,6 +1154,10 @@ static void __free_huge_page(struct page *page)
 
 	VM_BUG_ON_PAGE(page_count(page), page);
 	VM_BUG_ON_PAGE(page_mapcount(page), page);
+#ifdef CONFIG_HOMECACHE
+	/* Just do some assertion checking of page properties. */
+	(void)homecache_check_free_page(page, huge_page_order(h));
+#endif
 
 	set_page_private(page, 0);
 	page->mapping = NULL;
@@ -2067,6 +2074,10 @@ struct page *alloc_huge_page(struct vm_area_struct *vma,
 	spin_unlock(&hugetlb_lock);
 
 	set_page_private(page, (unsigned long)spool);
+#ifdef CONFIG_HOMECACHE
+        homecache_new_user_page(page, huge_page_order(h), vma->vm_page_prot,
+                                !!(vma->vm_flags & VM_MAYWRITE));
+#endif
 
 	map_commit = vma_commit_reservation(h, vma, addr);
 	if (unlikely(map_chg > map_commit)) {
@@ -3624,6 +3635,34 @@ retry_avoidcopy:
 	/* If no-one else is actually using this page, avoid the copy
 	 * and just make the page writable */
 	if (page_mapcount(old_page) == 1 && PageAnon(old_page)) {
+#ifdef CONFIG_HOMECACHE
+		/*
+		 * This process is effectively taking ownership
+		 * of the anonymous page.  As such, we should
+		 * make sure its home cache is on the local cpu.
+		 * We have to release the page table lock for this.
+		 * Note that we will end up retaking the fault if
+		 * we re-home the page, since we change the PTE,
+		 * but it seems like the cleanest thing to do here.
+		 */
+		get_page(old_page);
+		spin_unlock(&mm->page_table_lock);
+		homecache_home_page_here(old_page, huge_page_order(h),
+					 vma->vm_page_prot);
+		spin_lock(&mm->page_table_lock);
+		put_page(old_page);
+		ptep = huge_pte_offset(mm, address & huge_page_mask(h), HPAGE_SIZE);
+
+		/* Normally we would expect home_page_here(), which
+		 * calls try_to_unmap(), to take care of this.  But
+		 * these are huge pages and try_to_unmap() doesn't work.
+		 * So we have to touch this PTE by hand, but luckily
+		 * we know that it's the only one, since mapcount == 1.
+		 */
+		homecache_update_migrating_pte(old_page, ptep, vma, address);
+		if (!pte_same(*ptep, pte))
+			return 0;
+#endif
 		page_move_anon_rmap(old_page, vma);
 		set_huge_ptep_writable(vma, haddr, ptep);
 		return 0;
@@ -3907,6 +3946,11 @@ retry:
 				VM_FAULT_SET_HINDEX(hstate_index(h));
 			goto backout_unlocked;
 		}
+
+#ifdef CONFIG_HOMECACHE
+		homecache_update_page(page, huge_page_order(h), vma,
+				      !!(flags & FAULT_FLAG_WRITE));
+#endif
 	}
 
 	/*

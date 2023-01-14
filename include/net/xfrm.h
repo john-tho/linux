@@ -1682,6 +1682,7 @@ struct xfrm_algo_desc *xfrm_ealg_get_byidx(unsigned int idx);
 struct xfrm_algo_desc *xfrm_aalg_get_byid(int alg_id);
 struct xfrm_algo_desc *xfrm_ealg_get_byid(int alg_id);
 struct xfrm_algo_desc *xfrm_calg_get_byid(int alg_id);
+struct xfrm_algo_desc *xfrm_aead_get_byid(int alg_id);
 struct xfrm_algo_desc *xfrm_aalg_get_byname(const char *name, int probe);
 struct xfrm_algo_desc *xfrm_ealg_get_byname(const char *name, int probe);
 struct xfrm_algo_desc *xfrm_calg_get_byname(const char *name, int probe);

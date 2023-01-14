@@ -61,6 +61,7 @@ struct vlan_ioctl_args {
         } u;
 
 	short vlan_qos;   
+	unsigned short vlan_proto;
 };
 
 #endif /* _UAPI_LINUX_IF_VLAN_H_ */

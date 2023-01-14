@@ -144,6 +144,7 @@ struct netfront_queue {
 	struct sk_buff *rx_skbs[NET_RX_RING_SIZE];
 	grant_ref_t gref_rx_head;
 	grant_ref_t grant_rx_ref[NET_RX_RING_SIZE];
+	cpumask_t affinity_mask;
 };
 
 struct netfront_info {
@@ -166,6 +167,8 @@ struct netfront_rx_info {
 	struct xen_netif_rx_response rx;
 	struct xen_netif_extra_info extras[XEN_NETIF_EXTRA_TYPE_MAX - 1];
 };
+
+static void xennet_destroy_queues(struct netfront_info *info);
 
 static void skb_entry_set_link(union skb_entry *list, unsigned short id)
 {
@@ -220,7 +223,7 @@ static grant_ref_t xennet_get_rx_ref(struct netfront_queue *queue,
 	return ref;
 }
 
-#ifdef CONFIG_SYSFS
+#if 0 /*def CONFIG_SYSFS*/
 static const struct attribute_group xennet_dev_group;
 #endif
 
@@ -251,6 +254,25 @@ static void xennet_maybe_wake_tx(struct netfront_queue *queue)
 	    netfront_tx_slot_available(queue) &&
 	    likely(netif_running(dev)))
 		netif_tx_wake_queue(netdev_get_tx_queue(dev, queue->id));
+}
+
+static void xennet_set_queue_affinity(struct netfront_queue *queue, int cpu)
+{
+	struct cpumask *mask;
+
+	if (!queue->tx_irq)
+		return;
+
+	if (cpu != -1) {
+		mask = &queue->affinity_mask;
+		cpumask_set_cpu(cpu, mask);
+	}
+	else
+		mask = NULL;
+
+	irq_set_affinity_hint(queue->tx_irq, mask);
+	if (queue->tx_irq != queue->rx_irq)
+		irq_set_affinity_hint(queue->rx_irq, mask);
 }
 
 
@@ -1277,13 +1299,27 @@ static const struct net_device_ops xennet_netdev_ops = {
 #endif
 };
 
-static void xennet_free_netdev(struct net_device *netdev)
+static void xennet_free_netdev(struct net_device *netdev, bool must_free)
 {
 	struct netfront_info *np = netdev_priv(netdev);
 
 	free_percpu(np->rx_stats);
 	free_percpu(np->tx_stats);
+
+	if (must_free)
 	free_netdev(netdev);
+}
+
+static void xennet_destroy_netdev(struct net_device *netdev)
+{
+	struct netfront_info *info = netdev_priv(netdev);
+
+	if (netdev->reg_state == NETREG_UNINITIALIZED)
+		return;
+
+	if (info->queues)
+		xennet_destroy_queues(info);
+	xennet_free_netdev(info->netdev, false);
 }
 
 static struct net_device *xennet_create_dev(struct xenbus_device *dev)
@@ -1300,6 +1336,9 @@ static struct net_device *xennet_create_dev(struct xenbus_device *dev)
 	np->xbdev            = dev;
 
 	np->queues = NULL;
+
+	netdev->needs_free_netdev = true;
+	netdev->priv_destructor = xennet_destroy_netdev;
 
 	err = -ENOMEM;
 	np->rx_stats = netdev_alloc_pcpu_stats(struct netfront_stats);
@@ -1343,7 +1382,7 @@ static struct net_device *xennet_create_dev(struct xenbus_device *dev)
 	return netdev;
 
  exit:
-	xennet_free_netdev(netdev);
+	xennet_free_netdev(netdev, true);
 	return ERR_PTR(err);
 }
 
@@ -1368,7 +1407,7 @@ static int netfront_probe(struct xenbus_device *dev,
 
 	info = netdev_priv(netdev);
 	dev_set_drvdata(&dev->dev, info);
-#ifdef CONFIG_SYSFS
+#if 0 /*def CONFIG_SYSFS*/
 	info->netdev->sysfs_groups[0] = &xennet_dev_group;
 #endif
 
@@ -1393,6 +1432,8 @@ static void xennet_disconnect_backend(struct netfront_info *info)
 		struct netfront_queue *queue = &info->queues[i];
 
 		del_timer_sync(&queue->rx_refill_timer);
+
+		xennet_set_queue_affinity(queue, -1);
 
 		if (queue->tx_irq && (queue->tx_irq == queue->rx_irq))
 			unbind_from_irqhandler(queue->tx_irq, queue);
@@ -1468,9 +1509,11 @@ static int setup_netfront_single(struct netfront_queue *queue)
 	if (err < 0)
 		goto fail;
 
+	snprintf(queue->tx_irq_name, sizeof(queue->tx_irq_name),
+		 "%s-rxtx", queue->name);
 	err = bind_evtchn_to_irqhandler(queue->tx_evtchn,
 					xennet_interrupt,
-					0, queue->info->netdev->name, queue);
+					0, queue->tx_irq_name, queue);
 	if (err < 0)
 		goto bind_fail;
 	queue->rx_evtchn = queue->tx_evtchn;
@@ -1997,6 +2040,8 @@ static int xennet_connect(struct net_device *dev)
 		spin_lock_bh(&queue->rx_lock);
 		xennet_alloc_rx_buffers(queue);
 		spin_unlock_bh(&queue->rx_lock);
+
+		xennet_set_queue_affinity(queue, j % num_online_cpus());
 	}
 
 	return 0;
@@ -2097,6 +2142,7 @@ static const struct ethtool_ops xennet_ethtool_ops =
 	.get_strings = xennet_get_strings,
 };
 
+#if 0
 #ifdef CONFIG_SYSFS
 static ssize_t show_rxbuf(struct device *dev,
 			  struct device_attribute *attr, char *buf)
@@ -2138,6 +2184,7 @@ static const struct attribute_group xennet_dev_group = {
 	.attrs = xennet_dev_attrs
 };
 #endif /* CONFIG_SYSFS */
+#endif
 
 static int xennet_remove(struct xenbus_device *dev)
 {
@@ -2171,7 +2218,7 @@ static int xennet_remove(struct xenbus_device *dev)
 		xennet_destroy_queues(info);
 		rtnl_unlock();
 	}
-	xennet_free_netdev(info->netdev);
+	xennet_free_netdev(info->netdev, true);
 
 	return 0;
 }

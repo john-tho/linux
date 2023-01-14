@@ -27,7 +27,7 @@ unsigned int arch_mod_section_prepend(struct module *mod, unsigned int section);
 void *module_alloc(unsigned long size);
 
 /* Free memory returned from module_alloc. */
-void module_memfree(void *module_region);
+void module_memfree(void *module_region, unsigned size);
 
 /* Determines if the section name is an exit section (that is only used during
  * module unloading)

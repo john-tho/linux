@@ -141,6 +141,30 @@ static int create_default_filesystem(struct ubifs_info *c)
 		 */
 		orph_lebs += 1;
 
+	/*
+	 * Use minimum amount of reserved blocks on very small partitions
+	 * (or else 3.1MB kernel does not fit into 6MB partiton and
+	 *  2.8MB kernel does not fit into 8MB partition on nand with 4KB pages)
+	 */
+	if (c->leb_cnt <= 64) {
+		jnl_lebs = UBIFS_MIN_JNL_LEBS;
+		log_lebs = UBIFS_MIN_LOG_LEBS;
+		max_buds = UBIFS_MIN_BUD_LEBS;
+		orph_lebs = UBIFS_MIN_ORPH_LEBS;
+	}
+
+	/*
+	 * Use minimum amount of reserved blocks on very small partitions
+	 * (or else 3.1MB kernel does not fit into 6MB partiton and
+	 *  2.8MB kernel does not fit into 8MB partition on nand with 4KB pages)
+	 */
+	if (c->leb_cnt <= 64) {
+		jnl_lebs = UBIFS_MIN_JNL_LEBS;
+		log_lebs = UBIFS_MIN_LOG_LEBS;
+		max_buds = UBIFS_MIN_BUD_LEBS;
+		orph_lebs = UBIFS_MIN_ORPH_LEBS;
+	}
+
 	main_lebs = c->leb_cnt - UBIFS_SB_LEBS - UBIFS_MST_LEBS - log_lebs;
 	main_lebs -= orph_lebs;
 
@@ -200,7 +224,12 @@ static int create_default_filesystem(struct ubifs_info *c)
 	sup->jhead_cnt     = cpu_to_le32(DEFAULT_JHEADS_CNT);
 	sup->fanout        = cpu_to_le32(DEFAULT_FANOUT);
 	sup->lsave_cnt     = cpu_to_le32(c->lsave_cnt);
+#ifdef CONFIG_FS_ENCRYPTION
 	sup->fmt_version   = cpu_to_le32(UBIFS_FORMAT_VERSION);
+#else
+	/* backward compatibility for downgrade */
+	sup->fmt_version   = cpu_to_le32(4);
+#endif
 	sup->time_gran     = cpu_to_le32(DEFAULT_TIME_GRAN);
 	if (c->mount_opts.override_compr)
 		sup->default_compr = cpu_to_le16(c->mount_opts.compr_type);

@@ -118,7 +118,7 @@ static int qcom_usb_hs_phy_power_on(struct phy *phy)
 	ret = clk_prepare_enable(uphy->sleep_clk);
 	if (ret)
 		goto err_sleep;
-
+#if 0
 	ret = regulator_set_load(uphy->v1p8, 50000);
 	if (ret < 0)
 		goto err_1p8;
@@ -139,7 +139,7 @@ static int qcom_usb_hs_phy_power_on(struct phy *phy)
 	ret = regulator_enable(uphy->v3p3);
 	if (ret)
 		goto err_3p3;
-
+#endif
 	for (seq = uphy->init_seq; seq->addr; seq++) {
 		ret = ulpi_write(ulpi, ULPI_EXT_VENDOR_SPECIFIC + seq->addr,
 				 seq->val);

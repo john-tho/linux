@@ -80,6 +80,7 @@
 #include "datagram.h"
 
 struct kmem_cache *skbuff_head_cache __ro_after_init;
+EXPORT_SYMBOL(skbuff_head_cache);
 static struct kmem_cache *skbuff_fclone_cache __ro_after_init;
 #ifdef CONFIG_SKB_EXTENSIONS
 static struct kmem_cache *skbuff_ext_cache __ro_after_init;
@@ -199,6 +200,10 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	if (!skb)
 		goto out;
 	prefetchw(skb);
+
+#ifdef CONFIG_MIPS_MIKROTIK
+	gfp_mask |= __GFP_DMA;
+#endif
 
 	/* We do our best to align skb_shared_info on a separate cache
 	 * line. It usually works because kmalloc(X > SMP_CACHE_BYTES) gives
@@ -655,6 +660,33 @@ void skb_release_head_state(struct sk_buff *skb)
 #endif
 	skb_ext_put(skb);
 }
+
+void skb_recycle(struct sk_buff *skb)
+{
+       struct skb_shared_info *shinfo;
+
+       skb_release_head_state(skb);
+
+       shinfo = skb_shinfo(skb);
+       memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+       atomic_set(&shinfo->dataref, 1);
+
+       memset(skb, 0, offsetof(struct sk_buff, tail));
+       skb->data = skb->head + NET_SKB_PAD;
+       skb_reset_tail_pointer(skb);
+}
+EXPORT_SYMBOL(skb_recycle);
+
+bool skb_recycle_check(struct sk_buff *skb, int skb_size)
+{
+	if (!skb_is_recycleable(skb, skb_size))
+		return false;
+
+	skb_recycle(skb);
+
+	return true;
+}
+EXPORT_SYMBOL(skb_recycle_check);
 
 /* Free everything but the sk_buff shell. */
 static void skb_release_all(struct sk_buff *skb)
@@ -1621,6 +1653,10 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 	BUG_ON(skb_shared(skb));
 
 	size = SKB_DATA_ALIGN(size);
+
+#ifdef CONFIG_MIPS_MIKROTIK
+	gfp_mask |= __GFP_DMA;
+#endif
 
 	if (skb_pfmemalloc(skb))
 		gfp_mask |= __GFP_MEMALLOC;

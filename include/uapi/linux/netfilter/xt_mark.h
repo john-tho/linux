@@ -6,6 +6,7 @@
 
 struct xt_mark_tginfo2 {
 	__u32 mark, mask;
+	__u8 passthrough;
 };
 
 struct xt_mark_mtinfo1 {

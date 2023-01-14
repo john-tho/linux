@@ -138,10 +138,59 @@ static void __init i2c_quirk(void)
 	}
 }
 
+static void __init armada_370_xp_spi_fix(void)
+{
+	struct device_node *np;
+	for_each_compatible_node(np, NULL, "marvell,orion-spi") {
+		struct property *new_compat;
+
+		new_compat = kzalloc(sizeof(*new_compat), GFP_KERNEL);
+
+		new_compat->name = kstrdup("compatible", GFP_KERNEL);
+		new_compat->length = sizeof("marvell,armada-370-spi");
+		new_compat->value = kstrdup("marvell,armada-370-spi",
+				GFP_KERNEL);
+
+		of_update_property(np, new_compat);
+	}
+
+	for_each_compatible_node(np, NULL, "marvell,orion-spi") {
+		struct property *new_compat;
+
+		new_compat = kzalloc(sizeof(*new_compat), GFP_KERNEL);
+
+		new_compat->name = kstrdup("compatible", GFP_KERNEL);
+		new_compat->length = sizeof("marvell,armada-370-spi");
+		new_compat->value = kstrdup("marvell,armada-370-spi",
+				GFP_KERNEL);
+
+		of_update_property(np, new_compat);
+	}
+}
+
 static void __init mvebu_dt_init(void)
 {
+	void __iomem *wd_rstoutn_regs_offset = ioremap(0xf1020704, 4);
+	void __iomem *cntmr_regs_offset = ioremap(0xf1020300, 4);
+	unsigned u;
+	if (wd_rstoutn_regs_offset) {
+		u = readl(wd_rstoutn_regs_offset);
+		u &= ~BIT(8);
+		writel(u, wd_rstoutn_regs_offset);
+		iounmap(wd_rstoutn_regs_offset);
+	}
+	if (cntmr_regs_offset) {
+		#define TIMER_EN(x) (0x0001 << (2 * x))
+		u = readl(cntmr_regs_offset);
+		u &= ~TIMER_EN(4); // disable early watch dog
+		writel(u, cntmr_regs_offset);
+		iounmap(cntmr_regs_offset);
+	}
+
 	if (of_machine_is_compatible("marvell,armadaxp"))
 		i2c_quirk();
+
+	armada_370_xp_spi_fix();
 }
 
 static void __init armada_370_xp_dt_fixup(void)

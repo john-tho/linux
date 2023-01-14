@@ -446,7 +446,7 @@ static struct neighbour *ipv4_neigh_lookup(const struct dst_entry *dst,
         } else {
 		__be32 pkey;
 
-		pkey = skb ? ip_hdr(skb)->daddr : *((__be32 *) daddr);
+		pkey = skb ? ip_hdr(skb)->daddr : get_unaligned((__be32 *) daddr);
 		n = ip_neigh_gw4(dev, pkey);
 	}
 
@@ -575,6 +575,7 @@ static void build_sk_flow_key(struct flowi4 *fl4, const struct sock *sk)
 			   daddr, inet->inet_saddr, 0, 0, sk->sk_uid);
 	rcu_read_unlock();
 }
+EXPORT_SYMBOL(rt_cache_flush);
 
 static void ip_rt_build_flow_key(struct flowi4 *fl4, const struct sock *sk,
 				 const struct sk_buff *skb)
@@ -2283,6 +2284,9 @@ martian_source:
 	ip_handle_martian_source(dev, in_dev, skb, daddr, saddr);
 	goto out;
 }
+
+EXPORT_SYMBOL(ip_forward);
+EXPORT_SYMBOL(ip_local_deliver);
 
 int ip_route_input_noref(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 			 u8 tos, struct net_device *dev)

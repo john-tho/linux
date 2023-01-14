@@ -1008,6 +1008,9 @@ static noinline size_t if_nlmsg_size(const struct net_device *dev,
 	       + nla_total_size(4) /* IFLA_TXQLEN */
 	       + nla_total_size(4) /* IFLA_WEIGHT */
 	       + nla_total_size(4) /* IFLA_MTU */
+	       + nla_total_size(4) /* IFLA_L2MTU */
+	       + nla_total_size(4) /* IFLA_MPLSMTU */
+	       + nla_total_size(4) /* IFLA_PRIV_FLAGS */
 	       + nla_total_size(4) /* IFLA_LINK */
 	       + nla_total_size(4) /* IFLA_MASTER */
 	       + nla_total_size(1) /* IFLA_CARRIER */
@@ -1191,8 +1194,8 @@ static noinline_for_stack int rtnl_fill_stats(struct sk_buff *skb,
 	sp = nla_data(attr);
 	dev_get_stats(dev, sp);
 
-	attr = nla_reserve(skb, IFLA_STATS,
-			   sizeof(struct rtnl_link_stats));
+	attr = nla_reserve_64bit(skb, IFLA_STATS,
+				 sizeof(struct rtnl_link_stats), IFLA_PAD);
 	if (!attr)
 		return -EMSGSIZE;
 
@@ -1662,6 +1665,56 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb,
 	struct nlmsghdr *nlh;
 
 	ASSERT_RTNL();
+	if (ext_filter_mask & RTEXT_FILTER_COMPACT) {
+		struct rtnl_link_stats64 temp;
+		const struct rtnl_link_stats64 *stats;
+		struct rtnl_link_compact *lc;
+		nlh = nlmsg_put(skb, pid, seq, type, sizeof(*lc), flags);
+		if (nlh == NULL)
+			return -EMSGSIZE;
+		lc = nlmsg_data(nlh);
+
+		lc->ifi_family = AF_UNSPEC;
+		lc->__ifi_pad = 0;
+		lc->ifi_type = dev->type;
+
+		lc->index = dev->ifindex;
+		lc->flags = dev_get_flags(dev);
+		lc->change = change;
+
+		lc->addr_len = 10;
+		lc->addr_type = IFLA_ADDRESS;
+		memcpy(lc->addr, dev->dev_addr, sizeof(lc->addr));
+
+		lc->name_len = 20;
+		lc->name_type = IFLA_IFNAME;
+		memcpy(lc->name, dev->name, sizeof(lc->name));
+
+		lc->rest_len = sizeof(struct rtnl_link_compact) - offsetof(struct rtnl_link_compact, rest_len);
+		lc->rest_type = 0xff;
+		lc->mtu = dev->mtu;
+		lc->l2mtu = dev->l2mtu;
+		lc->mplsmtu = dev->mplsmtu;
+		lc->priv_flags = dev->priv_flags;
+		stats = dev_get_stats(dev, &temp);
+		lc->stats.rx_packets = stats->rx_packets;
+		lc->stats.rx_bytes = stats->rx_bytes;
+		lc->stats.rx_drops = stats->rx_dropped;
+		lc->stats.rx_errors = stats->rx_errors;
+		lc->stats.tx_packets = stats->tx_packets;
+		lc->stats.tx_bytes = stats->tx_bytes;
+		lc->stats.tx_drops = stats->tx_dropped;
+		lc->stats.tx_errors = stats->tx_errors;
+		lc->stats.fp_rx_packets = dev->fp.fp_rx_packet;
+		lc->stats.fp_tx_packets = dev->fp.fp_tx_packet;
+		lc->stats.fp_rx_bytes = dev->fp.fp_rx_byte;
+		lc->stats.fp_tx_bytes = dev->fp.fp_tx_byte;
+		lc->stats.tx_queue_drops = dev->fp.queue_stopped_drop +
+		    dev->qdisc->qstats.drops;
+		nlmsg_end(skb, nlh);
+		return 0;
+	}
+
 	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*ifm), flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
@@ -1693,6 +1746,11 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb,
 #ifdef CONFIG_RPS
 	    nla_put_u32(skb, IFLA_NUM_RX_QUEUES, dev->num_rx_queues) ||
 #endif
+	    (dev->l2mtu &&
+	     nla_put_u32(skb, IFLA_L2MTU, dev->l2mtu)) ||
+	    (dev->mplsmtu &&
+	     nla_put_u32(skb, IFLA_MPLSMTU, dev->mplsmtu)) ||
+	    nla_put_u32(skb, IFLA_PRIV_FLAGS, dev->priv_flags) ||
 	    put_master_ifindex(skb, dev) ||
 	    nla_put_u8(skb, IFLA_CARRIER, netif_carrier_ok(dev)) ||
 	    (dev->qdisc &&
@@ -1795,6 +1853,8 @@ static const struct nla_policy ifla_policy[IFLA_MAX+1] = {
 	[IFLA_LINKMODE]		= { .type = NLA_U8 },
 	[IFLA_LINKINFO]		= { .type = NLA_NESTED },
 	[IFLA_NET_NS_PID]	= { .type = NLA_U32 },
+	[IFLA_L2MTU]		= { .type = NLA_U32 },
+	[IFLA_MPLSMTU]		= { .type = NLA_U32 },
 	[IFLA_NET_NS_FD]	= { .type = NLA_U32 },
 	/* IFLA_IFALIAS is a string, but policy is set to NLA_BINARY to
 	 * allow 0-length string (needed to remove an alias).
@@ -3683,7 +3743,8 @@ struct sk_buff *rtmsg_ifinfo_build_skb(int type, struct net_device *dev,
 		goto errout;
 
 	err = rtnl_fill_ifinfo(skb, dev, dev_net(dev),
-			       type, 0, 0, change, 0, 0, event,
+			       type, 0, 0, change, 0, RTEXT_FILTER_COMPACT,
+			       event,
 			       new_nsid, new_ifindex, -1, flags);
 	if (err < 0) {
 		/* -EMSGSIZE implies BUG in if_nlmsg_size() */

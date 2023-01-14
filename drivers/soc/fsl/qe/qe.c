@@ -642,8 +642,11 @@ static int __init qe_init(void)
 	struct device_node *np;
 
 	np = of_find_compatible_node(NULL, NULL, "fsl,qe");
+	if (!np) {
+		np = of_find_node_by_type(NULL, "qe");
 	if (!np)
 		return -ENODEV;
+	}
 	qe_reset();
 	of_node_put(np);
 	return 0;

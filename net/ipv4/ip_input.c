@@ -641,3 +641,5 @@ void ip_list_rcv(struct list_head *head, struct packet_type *pt,
 	if (!list_empty(&sublist))
 		ip_sublist_rcv(&sublist, curr_dev, curr_net);
 }
+
+EXPORT_SYMBOL(ip_rcv);

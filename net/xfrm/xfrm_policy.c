@@ -1586,6 +1586,7 @@ int xfrm_policy_insert(int dir, struct xfrm_policy *policy, int excl)
 	}
 
 	__xfrm_policy_link(policy, dir);
+	fp_xfrm_changed(1);
 
 	/* After previous checking, family can either be AF_INET or AF_INET6 */
 	if (policy->family == AF_INET)
@@ -2207,6 +2208,7 @@ static void __xfrm_policy_link(struct xfrm_policy *pol, int dir)
 
 	list_add(&pol->walk.all, &net->xfrm.policy_all);
 	net->xfrm.policy_count[dir]++;
+	fp_xfrm_changed(1);
 	xfrm_pol_hold(pol);
 }
 
@@ -2227,6 +2229,7 @@ static struct xfrm_policy *__xfrm_policy_unlink(struct xfrm_policy *pol,
 
 	list_del_init(&pol->walk.all);
 	net->xfrm.policy_count[dir]--;
+	fp_xfrm_changed(-1);
 
 	return pol;
 }
@@ -3302,8 +3305,8 @@ decode_session4(struct sk_buff *skb, struct flowi *fl, bool reverse)
 				xprth = skb_network_header(skb) + ihl * 4;
 				ports = (__be16 *)xprth;
 
-				fl4->fl4_sport = ports[!!reverse];
-				fl4->fl4_dport = ports[!reverse];
+				fl4->fl4_sport = get_unaligned(&ports[!!reverse]);
+				fl4->fl4_dport = get_unaligned(&ports[!reverse]);
 			}
 			break;
 		case IPPROTO_ICMP:
@@ -3326,7 +3329,7 @@ decode_session4(struct sk_buff *skb, struct flowi *fl, bool reverse)
 				xprth = skb_network_header(skb) + ihl * 4;
 				ehdr = (__be32 *)xprth;
 
-				fl4->fl4_ipsec_spi = ehdr[0];
+				fl4->fl4_ipsec_spi = get_unaligned(&ehdr[0]);
 			}
 			break;
 		case IPPROTO_AH:
@@ -3337,7 +3340,7 @@ decode_session4(struct sk_buff *skb, struct flowi *fl, bool reverse)
 				xprth = skb_network_header(skb) + ihl * 4;
 				ah_hdr = (__be32 *)xprth;
 
-				fl4->fl4_ipsec_spi = ah_hdr[1];
+				fl4->fl4_ipsec_spi = get_unaligned(&ah_hdr[1]);
 			}
 			break;
 		case IPPROTO_COMP:
@@ -3364,7 +3367,7 @@ decode_session4(struct sk_buff *skb, struct flowi *fl, bool reverse)
 				if (greflags[0] & GRE_KEY) {
 					if (greflags[0] & GRE_CSUM)
 						gre_hdr++;
-					fl4->fl4_gre_key = gre_hdr[1];
+					fl4->fl4_gre_key = get_unaligned(&gre_hdr[1]);
 				}
 			}
 			break;

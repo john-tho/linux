@@ -199,6 +199,8 @@ extern struct static_key_false rfs_needed;
 struct neighbour;
 struct neigh_parms;
 struct sk_buff;
+struct m_port;
+struct of_port;
 
 struct netdev_hw_addr {
 	struct list_head	list;
@@ -340,6 +342,7 @@ struct napi_struct {
 	struct list_head	dev_list;
 	struct hlist_node	napi_hash_node;
 	unsigned int		napi_id;
+	struct task_struct	*thread;
 };
 
 enum {
@@ -348,8 +351,11 @@ enum {
 	NAPI_STATE_DISABLE,	/* Disable pending */
 	NAPI_STATE_NPSVC,	/* Netpoll - don't dequeue from poll_list */
 	NAPI_STATE_HASHED,	/* In NAPI hash (busy polling possible) */
-	NAPI_STATE_NO_BUSY_POLL,/* Do not add in napi_hash, no busy polling */
-	NAPI_STATE_IN_BUSY_POLL,/* sk_busy_loop() owns this NAPI */
+	NAPI_STATE_NO_BUSY_POLL,	/* Do not add in napi_hash, no busy polling */
+	NAPI_STATE_IN_BUSY_POLL,	/* sk_busy_loop() owns this NAPI */
+	NAPI_STATE_PREFER_BUSY_POLL,	/* prefer busy-polling over softirq processing*/
+	NAPI_STATE_THREADED,		/* The poll is performed inside its own thread*/
+	NAPI_STATE_SCHED_THREADED,	/* Napi is currently scheduled in threaded mode */
 };
 
 enum {
@@ -360,6 +366,9 @@ enum {
 	NAPIF_STATE_HASHED	 = BIT(NAPI_STATE_HASHED),
 	NAPIF_STATE_NO_BUSY_POLL = BIT(NAPI_STATE_NO_BUSY_POLL),
 	NAPIF_STATE_IN_BUSY_POLL = BIT(NAPI_STATE_IN_BUSY_POLL),
+	NAPIF_STATE_PREFER_BUSY_POLL	= BIT(NAPI_STATE_PREFER_BUSY_POLL),
+	NAPIF_STATE_THREADED		= BIT(NAPI_STATE_THREADED),
+	NAPIF_STATE_SCHED_THREADED	= BIT(NAPI_STATE_SCHED_THREADED),
 };
 
 enum gro_result {
@@ -430,6 +439,11 @@ static inline bool napi_disable_pending(struct napi_struct *n)
 	return test_bit(NAPI_STATE_DISABLE, &n->state);
 }
 
+static inline bool napi_prefer_busy_poll(struct napi_struct *n)
+{
+	return test_bit(NAPI_STATE_PREFER_BUSY_POLL, &n->state);
+}
+
 bool napi_schedule_prep(struct napi_struct *n);
 
 /**
@@ -481,6 +495,8 @@ static inline bool napi_complete(struct napi_struct *n)
 	return napi_complete_done(n, 0);
 }
 
+int dev_set_threaded(struct net_device *dev, bool threaded);
+
 /**
  *	napi_hash_del - remove a NAPI from global table
  *	@napi: NAPI context
@@ -504,20 +520,7 @@ bool napi_hash_del(struct napi_struct *napi);
  */
 void napi_disable(struct napi_struct *n);
 
-/**
- *	napi_enable - enable NAPI scheduling
- *	@n: NAPI context
- *
- * Resume NAPI from being scheduled on this context.
- * Must be paired with napi_disable.
- */
-static inline void napi_enable(struct napi_struct *n)
-{
-	BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
-	smp_mb__before_atomic();
-	clear_bit(NAPI_STATE_SCHED, &n->state);
-	clear_bit(NAPI_STATE_NPSVC, &n->state);
-}
+void napi_enable(struct napi_struct *n);
 
 /**
  *	napi_synchronize - wait until NAPI is not running
@@ -1264,6 +1267,7 @@ struct netdev_net_notifier {
  *	Called with a reference on the netdevice and devlink locks only,
  *	rtnl_lock is not held.
  */
+struct fp_buf;
 struct net_device_ops {
 	int			(*ndo_init)(struct net_device *dev);
 	void			(*ndo_uninit)(struct net_device *dev);
@@ -1271,6 +1275,9 @@ struct net_device_ops {
 	int			(*ndo_stop)(struct net_device *dev);
 	netdev_tx_t		(*ndo_start_xmit)(struct sk_buff *skb,
 						  struct net_device *dev);
+	int			(*ndo_fast_path_xmit) (struct net_device *dev,
+						       struct fp_buf *fpb);
+	int			(*ndo_xmit_commit) (struct net_device *dev);
 	netdev_features_t	(*ndo_features_check)(struct sk_buff *skb,
 						      struct net_device *dev,
 						      netdev_features_t features);
@@ -1289,6 +1296,8 @@ struct net_device_ops {
 					          struct ifmap *map);
 	int			(*ndo_change_mtu)(struct net_device *dev,
 						  int new_mtu);
+	int			(*ndo_change_l2mtu)(struct net_device *dev,
+						  int new_l2mtu);
 	int			(*ndo_neigh_setup)(struct net_device *dev,
 						   struct neigh_parms *);
 	void			(*ndo_tx_timeout) (struct net_device *dev,
@@ -1545,6 +1554,7 @@ enum netdev_priv_flags {
 	IFF_FAILOVER_SLAVE		= 1<<28,
 	IFF_L3MDEV_RX_HANDLER		= 1<<29,
 	IFF_LIVE_RENAME_OK		= 1<<30,
+	IFF_SWITCH_PORT			= 1<<31,
 };
 
 #define IFF_802_1Q_VLAN			IFF_802_1Q_VLAN
@@ -1572,6 +1582,7 @@ enum netdev_priv_flags {
 #define IFF_TEAM			IFF_TEAM
 #define IFF_RXFH_CONFIGURED		IFF_RXFH_CONFIGURED
 #define IFF_MACSEC			IFF_MACSEC
+#define IFF_SWITCH_PORT			IFF_SWITCH_PORT
 #define IFF_NO_RX_HANDLER		IFF_NO_RX_HANDLER
 #define IFF_FAILOVER			IFF_FAILOVER
 #define IFF_FAILOVER_SLAVE		IFF_FAILOVER_SLAVE
@@ -1814,6 +1825,8 @@ enum netdev_priv_flags {
  *
  *	@wol_enabled:	Wake-on-LAN is enabled
  *
+ *	@threaded:	napi threaded mode is enabled
+ *
  *	@net_notifier_list:	List of per-net netdev notifier block
  *				that follow this device when it is moved
  *				to another network namespace.
@@ -1821,6 +1834,42 @@ enum netdev_priv_flags {
  *	FIXME: cleanup struct net_device such that network protocol info
  *	moves out.
  */
+struct fp_stuff;
+struct fp_stats_rcu;
+struct fp_dev_pcpu_stats {
+    u32 sp_rx_packet;
+    u32 sp_tx_packet;
+    u32 sp_rx_byte;
+    u32 sp_tx_byte;
+    u32 fp_rx_packet;
+    u32 fp_tx_packet;
+    u32 fp_rx_byte;
+    u32 fp_tx_byte;
+    u32 queue_stopped_drop;
+    u32 tx_drop;
+    u32 prev_fp_tx_packet;
+    u32 in_xmit;
+};
+
+struct fp_dev {
+	struct fp_stuff *stuff;
+	unsigned char dev_addr[ETH_ALEN];
+	int (*xmit)(struct net_device *dev, struct fp_buf *fpb);
+	struct hlist_node list;
+	struct fp_dev_pcpu_stats __percpu *stats;
+	struct fp_stats_rcu *stats_rcu;
+	struct net_device *forward_dev;
+	u64 sp_rx_packet;
+	u64 sp_tx_packet;
+	u64 sp_rx_byte;
+	u64 sp_tx_byte;
+	u64 fp_rx_packet;
+	u64 fp_tx_packet;
+	u64 fp_rx_byte;
+	u64 fp_tx_byte;
+	u64 queue_stopped_drop;
+	u64 tx_drop;
+};
 
 struct net_device {
 	char			name[IFNAMSIZ];
@@ -1917,6 +1966,8 @@ struct net_device {
 	 * and to use WRITE_ONCE() to annotate the writes.
 	 */
 	unsigned int		mtu;
+	unsigned int		l2mtu;
+	unsigned int		mplsmtu;
 	unsigned int		min_mtu;
 	unsigned int		max_mtu;
 	unsigned short		type;
@@ -1953,6 +2004,7 @@ struct net_device {
 
 #if IS_ENABLED(CONFIG_VLAN_8021Q)
 	struct vlan_info __rcu	*vlan_info;
+	struct vlan_info __rcu	*vlan_info_alt;
 #endif
 #if IS_ENABLED(CONFIG_NET_DSA)
 	struct dsa_port		*dsa_ptr;
@@ -2077,6 +2129,9 @@ struct net_device {
 	struct mrp_port __rcu	*mrp_port;
 #endif
 
+	struct of_port __rcu	*of_port; /* OpenFlow port */
+	struct m_port		*mesh_port;
+
 	struct device		dev;
 	const struct attribute_group *sysfs_groups[4];
 	const struct attribute_group *sysfs_rx_queue_group;
@@ -2088,6 +2143,10 @@ struct net_device {
 	unsigned int		gso_max_size;
 #define GSO_MAX_SEGS		65535
 	u16			gso_max_segs;
+	unsigned		devid;
+	struct fp_dev fp;
+	unsigned long list_bitmap[256 / BITS_PER_LONG];
+	struct net_device *master_dev;
 
 #ifdef CONFIG_DCB
 	const struct dcbnl_rtnl_ops *dcbnl_ops;
@@ -2110,6 +2169,7 @@ struct net_device {
 	struct lock_class_key	addr_list_lock_key;
 	bool			proto_down;
 	unsigned		wol_enabled:1;
+	unsigned		threaded:1;
 
 	struct list_head	net_notifier_list;
 };
@@ -2548,6 +2608,8 @@ enum netdev_cmd {
 	NETDEV_CVLAN_FILTER_DROP_INFO,
 	NETDEV_SVLAN_FILTER_PUSH_INFO,
 	NETDEV_SVLAN_FILTER_DROP_INFO,
+	NETDEV_CHANGEL2MTU,
+	NETDEV_CHANGEMPLSMTU,
 };
 const char *netdev_cmd_to_name(enum netdev_cmd cmd);
 
@@ -4326,6 +4388,7 @@ int dev_set_allmulti(struct net_device *dev, int inc);
 void netdev_state_change(struct net_device *dev);
 void netdev_notify_peers(struct net_device *dev);
 void netdev_features_change(struct net_device *dev);
+void netdev_l2mtu_change(struct net_device *dev);
 /* Load a device via the kmod */
 void dev_load(struct net *net, const char *name);
 struct rtnl_link_stats64 *dev_get_stats(struct net_device *dev,
@@ -4989,5 +5052,27 @@ do {								\
 #define PTYPE_HASH_MASK	(PTYPE_HASH_SIZE - 1)
 
 extern struct net_device *blackhole_netdev;
+
+extern void (*ipv4_routing_changed)(void);
+extern void (*fp_ptype_all_changed)(int);
+extern void (*fp_nf_changed)(int, int pf);
+extern void (*fp_xfrm_changed)(int);
+
+DECLARE_PER_CPU(unsigned, per_cpu_netif_receive_depth);
+#define MAX_NETIF_RECEIVE_DEPTH (PAGE_SIZE / 4096)
+
+static inline int netif_receive_any(struct sk_buff *skb) {
+    unsigned *netif_receive_depth = this_cpu_ptr(&per_cpu_netif_receive_depth);
+    int ret;
+    if (*netif_receive_depth < MAX_NETIF_RECEIVE_DEPTH) {
+	*netif_receive_depth += 1;
+	ret = netif_receive_skb(skb);
+	*netif_receive_depth -= 1;
+	return ret;
+    }
+    else {
+	return netif_rx(skb);
+    }
+}
 
 #endif	/* _LINUX_NETDEVICE_H */

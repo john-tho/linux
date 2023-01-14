@@ -224,6 +224,7 @@ enum {
 						        error-handling stage) */
 	AHCI_HFLAG_NO_DEVSLP		= (1 << 17), /* no device sleep */
 	AHCI_HFLAG_NO_FBS		= (1 << 18), /* no FBS */
+	AHCI_HFLAG_AL_MSIX		= (1 << 19), /* alpine msix */
 
 #ifdef CONFIG_PCI_MSI
 	AHCI_HFLAG_MULTI_MSI		= (1 << 20), /* per-port MSI(-X) */
@@ -440,4 +441,7 @@ static inline int ahci_nr_ports(u32 cap)
 	return (cap & 0x1f) + 1;
 }
 
+bool al_ahci_enabled(void);
+int al_init_msix_interrupts(struct pci_dev *pdev, unsigned int n_ports,
+			    struct ahci_host_priv *hpriv);
 #endif /* _AHCI_H */

@@ -577,7 +577,9 @@ void __qdisc_calculate_pkt_len(struct sk_buff *skb,
 out:
 	if (unlikely(pkt_len < 1))
 		pkt_len = 1;
+#if 0
 	qdisc_skb_cb(skb)->pkt_len = pkt_len;
+#endif
 }
 EXPORT_SYMBOL(__qdisc_calculate_pkt_len);
 
@@ -1472,10 +1474,12 @@ static int tc_get_qdisc(struct sk_buff *skb, struct nlmsghdr *n,
 			NL_SET_ERR_MSG(extack, "Classid cannot be zero");
 			return -EINVAL;
 		}
+#if 0		
 		if (q->handle == 0) {
 			NL_SET_ERR_MSG(extack, "Cannot delete qdisc with handle of zero");
 			return -ENOENT;
 		}
+#endif		
 		err = qdisc_graft(dev, p, skb, n, clid, NULL, q, extack);
 		if (err != 0)
 			return err;

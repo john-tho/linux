@@ -81,6 +81,9 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
+#ifdef CONFIG_HOMECACHE
+#include <asm/homecache.h>
+#endif
 
 #include "internal.h"
 
@@ -456,18 +459,19 @@ int __pte_alloc(struct mm_struct *mm, pmd_t *pmd)
 
 int __pte_alloc_kernel(pmd_t *pmd)
 {
+	unsigned long flags;
 	pte_t *new = pte_alloc_one_kernel(&init_mm);
 	if (!new)
 		return -ENOMEM;
 
 	smp_wmb(); /* See comment in __pte_alloc */
 
-	spin_lock(&init_mm.page_table_lock);
+	spin_lock_irqsave(&init_mm.page_table_lock, flags);
 	if (likely(pmd_none(*pmd))) {	/* Has another populated it ? */
 		pmd_populate_kernel(&init_mm, pmd, new);
 		new = NULL;
 	}
-	spin_unlock(&init_mm.page_table_lock);
+	spin_unlock_irqrestore(&init_mm.page_table_lock, flags);
 	if (new)
 		pte_free_kernel(&init_mm, new);
 	return 0;
@@ -2513,8 +2517,13 @@ static vm_fault_t wp_page_copy(struct vm_fault *vmf)
 		if (!new_page)
 			goto oom;
 	} else {
+#ifdef CONFIG_HOMECACHE
+		new_page = homecache_alloc_page_vma(GFP_HIGHUSER_MOVABLE,
+						    vma, vmf->address);
+#else
 		new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma,
 				vmf->address);
+#endif
 		if (!new_page)
 			goto oom;
 
@@ -3545,6 +3554,9 @@ vm_fault_t finish_fault(struct vm_fault *vmf)
 	else
 		page = vmf->page;
 
+#ifdef CONFIG_HOMECACHE
+	homecache_update_page(vmf->page, 0, vmf->vma, 0);
+#endif
 	/*
 	 * check even for read faults because we might have lost our CoWed
 	 * page
@@ -3708,7 +3720,11 @@ static vm_fault_t do_cow_fault(struct vm_fault *vmf)
 	if (unlikely(anon_vma_prepare(vma)))
 		return VM_FAULT_OOM;
 
+#ifdef CONFIG_HOMECACHE
+	vmf->cow_page = homecache_alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+#else
 	vmf->cow_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, vmf->address);
+#endif	
 	if (!vmf->cow_page)
 		return VM_FAULT_OOM;
 
@@ -4039,6 +4055,16 @@ static vm_fault_t handle_pte_fault(struct vm_fault *vmf)
 		 * ptl lock held. So here a barrier will do.
 		 */
 		barrier();
+
+#ifdef CONFIG_HOMECACHE
+		/* Wait for any homecache migration to complete. */
+		if (pte_none(vmf->orig_pte)) {
+			while (pte_migrating(vmf->orig_pte)) {
+				cpu_relax();
+				vmf->orig_pte = *vmf->pte;
+			}
+		}
+#endif
 		if (pte_none(vmf->orig_pte)) {
 			pte_unmap(vmf->pte);
 			vmf->pte = NULL;

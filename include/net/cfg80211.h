@@ -66,6 +66,27 @@ struct wiphy;
  */
 
 /**
+ * enum ieee80211_band - supported frequency bands
+ *
+ * The bands are assigned this way because the supported
+ * bitrates differ in these bands.
+ *
+ * @IEEE80211_BAND_2GHZ: 2.4GHz ISM band
+ * @IEEE80211_BAND_5GHZ: around 5GHz band (4.9-5.7)
+ * @IEEE80211_BAND_60GHZ: around 60 GHz band (58.32 - 64.80 GHz)
+ * @IEEE80211_NUM_BANDS: number of defined bands
+ */
+enum ieee80211_band {
+        IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
+        IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
+        IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
+        IEEE80211_BAND_6GHZ = NL80211_BAND_6GHZ,
+
+        /* keep last */
+        IEEE80211_NUM_BANDS
+};
+
+/**
  * enum ieee80211_channel_flags - channel flags
  *
  * Channel flags set by the regulatory control code.
@@ -596,6 +617,22 @@ struct cfg80211_chan_def {
 	u32 center_freq1;
 	u32 center_freq2;
 	struct ieee80211_edmg edmg;
+};
+
+/**
+ * struct cfg80211_fils_aad - FILS AAD data
+ * @macaddr: STA MAC address
+ * @kek: FILS KEK
+ * @kek_len: FILS KEK length
+ * @snonce: STA Nonce
+ * @anonce: AP Nonce
+ */
+struct cfg80211_fils_aad {
+	const u8 *macaddr;
+	const u8 *kek;
+	u8 kek_len;
+	const u8 *snonce;
+	const u8 *anonce;
 };
 
 /**
@@ -3340,6 +3377,8 @@ struct cfg80211_update_owe_info {
  *
  * @set_default_mgmt_key: set the default management frame key on an interface
  *
+ * @set_default_beacon_key: set default Beacon frame key on an interface
+ *
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
@@ -3672,6 +3711,9 @@ struct cfg80211_ops {
 	int	(*set_default_mgmt_key)(struct wiphy *wiphy,
 					struct net_device *netdev,
 					u8 key_index);
+	int	(*set_default_beacon_key)(struct wiphy *wiphy,
+					  struct net_device *netdev,
+					  u8 key_index);
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);
@@ -3941,6 +3983,9 @@ struct cfg80211_ops {
 	int     (*external_auth)(struct wiphy *wiphy, struct net_device *dev,
 				 struct cfg80211_external_auth_params *params);
 
+	int	(*set_fils_aad)(struct wiphy *wiphy, struct net_device *dev,
+				struct cfg80211_fils_aad *fils_aad);
+    
 	int	(*tx_control_port)(struct wiphy *wiphy,
 				   struct net_device *dev,
 				   const u8 *buf, size_t len,
@@ -7324,6 +7369,9 @@ static inline void wiphy_ext_feature_set(struct wiphy *wiphy,
 {
 	u8 *ft_byte;
 
+	if (ftidx >= NUM_NL80211_EXT_FEATURES)
+		return;
+
 	ft_byte = &wiphy->ext_features[ftidx / 8];
 	*ft_byte |= BIT(ftidx % 8);
 }
@@ -7342,6 +7390,9 @@ wiphy_ext_feature_isset(struct wiphy *wiphy,
 			enum nl80211_ext_feature_index ftidx)
 {
 	u8 ft_byte;
+
+	if (ftidx >= NUM_NL80211_EXT_FEATURES)
+		return false;
 
 	ft_byte = wiphy->ext_features[ftidx / 8];
 	return (ft_byte & BIT(ftidx % 8)) != 0;

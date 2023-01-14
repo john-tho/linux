@@ -243,7 +243,11 @@ static unsigned long get_symbol_pos(unsigned long addr,
 		if (is_kernel_inittext(addr))
 			symbol_end = (unsigned long)_einittext;
 		else if (IS_ENABLED(CONFIG_KALLSYMS_ALL))
+#ifdef __tile__
+			symbol_end = (unsigned long)_einittext;
+#else
 			symbol_end = (unsigned long)_end;
+#endif
 		else
 			symbol_end = (unsigned long)_etext;
 	}
@@ -282,7 +286,7 @@ int kallsyms_lookup_size_offset(unsigned long addr, unsigned long *symbolsize,
 const char *kallsyms_lookup(unsigned long addr,
 			    unsigned long *symbolsize,
 			    unsigned long *offset,
-			    char **modname, char *namebuf)
+			    struct module **modret, char *namebuf)
 {
 	const char *ret;
 
@@ -296,14 +300,15 @@ const char *kallsyms_lookup(unsigned long addr,
 		/* Grab name */
 		kallsyms_expand_symbol(get_symbol_offset(pos),
 				       namebuf, KSYM_NAME_LEN);
-		if (modname)
-			*modname = NULL;
+		if (modret)
+			*modret = NULL;
 		return namebuf;
 	}
 
 	/* See if it's in a module or a BPF JITed image. */
 	ret = module_address_lookup(addr, symbolsize, offset,
-				    modname, namebuf);
+				    modret, namebuf);
+#if 0	
 	if (!ret)
 		ret = bpf_address_lookup(addr, symbolsize,
 					 offset, modname, namebuf);
@@ -311,6 +316,8 @@ const char *kallsyms_lookup(unsigned long addr,
 	if (!ret)
 		ret = ftrace_mod_address_lookup(addr, symbolsize,
 						offset, modname, namebuf);
+#endif
+
 	return ret;
 }
 
@@ -356,15 +363,21 @@ int lookup_symbol_attrs(unsigned long addr, unsigned long *size,
 static int __sprint_symbol(char *buffer, unsigned long address,
 			   int symbol_offset, int add_offset)
 {
-	char *modname;
+	struct module *mod = NULL;
 	const char *name;
 	unsigned long offset, size;
 	int len;
 
 	address += symbol_offset;
-	name = kallsyms_lookup(address, &size, &offset, &modname, buffer);
-	if (!name)
+	name = kallsyms_lookup(address, &size, &offset, &mod, buffer);
+	if (!name) {
+		if (mod)
+			return sprintf(buffer, "0x%lx [%s@0x%lx]",
+				       address - symbol_offset, mod->name,
+				       (unsigned long)mod->core_layout.base);
+		else
 		return sprintf(buffer, "0x%lx", address - symbol_offset);
+	}
 
 	if (name != buffer)
 		strcpy(buffer, name);
@@ -374,8 +387,9 @@ static int __sprint_symbol(char *buffer, unsigned long address,
 	if (add_offset)
 		len += sprintf(buffer + len, "+%#lx/%#lx", offset, size);
 
-	if (modname)
-		len += sprintf(buffer + len, " [%s]", modname);
+	if (mod)
+		len += sprintf(buffer + len, " [%s@0x%lx]", mod->name,
+			       (unsigned long) mod->core_layout.base);
 
 	return len;
 }

@@ -57,3 +57,7 @@ obj-$(CONFIG_GENERIC_ADC_THERMAL)	+= thermal-generic-adc.o
 obj-$(CONFIG_ZX2967_THERMAL)	+= zx2967_thermal.o
 obj-$(CONFIG_UNIPHIER_THERMAL)	+= uniphier_thermal.o
 obj-$(CONFIG_AMLOGIC_THERMAL)     += amlogic_thermal.o
+
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
+obj-$(CONFIG_AL_THERMAL_V2)	+= al_thermal_v2.o
+obj-$(CONFIG_AL_THERMAL_V3)	+= al_thermal_v3.o

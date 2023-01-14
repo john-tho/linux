@@ -23,7 +23,7 @@ static const struct xt_table packet_raw = {
 	.valid_hooks =  RAW_VALID_HOOKS,
 	.me = THIS_MODULE,
 	.af = NFPROTO_IPV4,
-	.priority = NF_IP_PRI_RAW,
+	.priority = NF_IP_PRI_RAW_BEFORE_DEFRAG - 1,
 	.table_init = iptable_raw_table_init,
 };
 

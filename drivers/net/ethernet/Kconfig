@@ -109,6 +109,11 @@ config LANTIQ_ETOP
 	---help---
 	  Support for the MII0 inside the Lantiq SoC
 
+config MT_VETH
+	bool "MetaROUTER Virtual Ethernet support"
+	depends on METAROUTER || MIPS_MIKROTIK
+	default y
+
 config LANTIQ_XRX200
 	tristate "Lantiq / Intel xRX200 PMAC network driver"
 	depends on SOC_TYPE_XWAY

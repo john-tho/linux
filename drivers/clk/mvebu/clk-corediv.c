@@ -14,6 +14,7 @@
 #include <linux/of_address.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/clk.h>
 #include "common.h"
 
 #define CORE_CLK_DIV_RATIO_MASK		0xff
@@ -334,4 +335,6 @@ static void __init mv98dx3236_corediv_clk_init(struct device_node *node)
 	return mvebu_corediv_clk_init(node, &mv98dx3236_corediv_soc);
 }
 CLK_OF_DECLARE(mv98dx3236_corediv_clk, "marvell,mv98dx3236-corediv-clock",
+	       mv98dx3236_corediv_clk_init);
+CLK_OF_DECLARE(mvebu_corediv_msys_clk, "marvell,msys-corediv-clock",
 	       mv98dx3236_corediv_clk_init);

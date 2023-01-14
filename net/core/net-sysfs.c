@@ -508,6 +508,45 @@ static ssize_t phys_switch_id_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(phys_switch_id);
 
+static ssize_t threaded_show(struct device *dev,
+			     struct device_attribute *attr, char *buf)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	ssize_t ret = -EINVAL;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	if (dev_isalive(netdev))
+		ret = sprintf(buf, fmt_dec, netdev->threaded);
+
+	rtnl_unlock();
+	return ret;
+}
+
+static int modify_napi_threaded(struct net_device *dev, unsigned long val)
+{
+	int ret;
+
+	if (list_empty(&dev->napi_list))
+		return -EOPNOTSUPP;
+
+	if (val != 0 && val != 1)
+		return -EOPNOTSUPP;
+
+	ret = dev_set_threaded(dev, val);
+
+	return ret;
+}
+
+static ssize_t threaded_store(struct device *dev,
+			      struct device_attribute *attr,
+			      const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, modify_napi_threaded);
+}
+static DEVICE_ATTR_RW(threaded);
+
 static struct attribute *net_class_attrs[] __ro_after_init = {
 	&dev_attr_netdev_group.attr,
 	&dev_attr_type.attr,
@@ -538,6 +577,7 @@ static struct attribute *net_class_attrs[] __ro_after_init = {
 	&dev_attr_proto_down.attr,
 	&dev_attr_carrier_up_count.attr,
 	&dev_attr_carrier_down_count.attr,
+	&dev_attr_threaded.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(net_class);
@@ -1714,6 +1754,19 @@ void netdev_unregister_kobject(struct net_device *ndev)
 
 	kobject_get(&dev->kobj);
 
+	if (strncmp(ndev->name, "bond", 4) &&
+	    strncmp(ndev->name, "eth", 3) &&
+	    strncmp(ndev->name, "wwan", 4) &&
+	    strncmp(ndev->name, "wil", 3) &&
+	    strncmp(ndev->name, "lte", 3) &&
+	    strncmp(ndev->name, "wifi", 4) &&
+	    strncmp(ndev->name, "ath", 3) &&
+	    strncmp(ndev->name, "wlan", 4) &&
+	    strncmp(ndev->name, "terra", 5) &&
+	    strncmp(ndev->name, "soc", 3)) {
+		return;
+	}
+
 	remove_queue_kobjects(ndev);
 
 	pm_runtime_set_memalloc_noio(dev, false);
@@ -1751,6 +1804,21 @@ int netdev_register_kobject(struct net_device *ndev)
 #endif
 #endif
 #endif /* CONFIG_SYSFS */
+
+	/* no need to send hotplug events & populate /sys/class/net
+	   with interces, just waistes precious time */
+	if (strncmp(ndev->name, "bond", 4) &&
+	    strncmp(ndev->name, "eth", 3) &&
+	    strncmp(ndev->name, "wwan", 4) &&
+	    strncmp(ndev->name, "wil", 3) &&
+	    strncmp(ndev->name, "lte", 3) &&
+	    strncmp(ndev->name, "wifi", 4) &&
+	    strncmp(ndev->name, "ath", 3) &&
+	    strncmp(ndev->name, "wlan", 4) &&
+	    strncmp(ndev->name, "terra", 5) &&
+	    strncmp(ndev->name, "soc", 3)) {
+		return 0;
+	}
 
 	error = device_add(dev);
 	if (error)

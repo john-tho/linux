@@ -1357,6 +1357,9 @@ int fib_table_insert(struct net *net, struct fib_table *tb,
 	rtmsg_fib(RTM_NEWROUTE, htonl(key), new_fa, plen, new_fa->tb_id,
 		  &cfg->fc_nlinfo, nlflags);
 succeeded:
+	if (ipv4_routing_changed) {
+	    ipv4_routing_changed();
+	}
 	return 0;
 
 out_remove_new_fa:
@@ -1708,6 +1711,9 @@ int fib_table_delete(struct net *net, struct fib_table *tb,
 
 	fib_release_info(fa_to_delete->fa_info);
 	alias_free_mem_rcu(fa_to_delete);
+	if (ipv4_routing_changed) {
+	    ipv4_routing_changed();
+	}
 	return 0;
 }
 

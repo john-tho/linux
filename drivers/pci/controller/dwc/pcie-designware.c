@@ -15,6 +15,22 @@
 #include "../../pci.h"
 #include "pcie-designware.h"
 
+#define PCIE_ATU_CR1_OUTBOUND_6_GEN3			0xC00
+#define PCIE_ATU_CR2_OUTBOUND_6_GEN3			0xC04
+#define PCIE_ATU_LOWER_BASE_OUTBOUND_6_GEN3		0xC08
+#define PCIE_ATU_UPPER_BASE_OUTBOUND_6_GEN3		0xC0C
+#define PCIE_ATU_LIMIT_OUTBOUND_6_GEN3			0xC10
+#define PCIE_ATU_LOWER_TARGET_OUTBOUND_6_GEN3		0xC14
+#define PCIE_ATU_UPPER_TARGET_OUTBOUND_6_GEN3		0xC18
+
+#define PCIE_ATU_CR1_OUTBOUND_7_GEN3			0xE00
+#define PCIE_ATU_CR2_OUTBOUND_7_GEN3			0xE04
+#define PCIE_ATU_LOWER_BASE_OUTBOUND_7_GEN3		0xE08
+#define PCIE_ATU_UPPER_BASE_OUTBOUND_7_GEN3		0xE0C
+#define PCIE_ATU_LIMIT_OUTBOUND_7_GEN3			0xE10
+#define PCIE_ATU_LOWER_TARGET_OUTBOUND_7_GEN3		0xE14
+#define PCIE_ATU_UPPER_TARGET_OUTBOUND_7_GEN3		0xE18
+
 /*
  * These interfaces resemble the pci_find_*capability() interfaces, but these
  * are for configuring host controllers, which are bridges *to* PCI devices but
@@ -245,6 +261,24 @@ static void dw_pcie_prog_outbound_atu_unroll(struct dw_pcie *pci, int index,
 {
 	u32 retries, val;
 
+	if (pci->pp.is_gen3) {
+		writel_relaxed(0x4, pci->pp.dm_iatu + PCIE_ATU_CR1_OUTBOUND_6_GEN3);
+		writel_relaxed(0x90000000, pci->pp.dm_iatu + PCIE_ATU_CR2_OUTBOUND_6_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_LOWER_BASE_OUTBOUND_6_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_UPPER_BASE_OUTBOUND_6_GEN3);
+		writel_relaxed(0x00107FFFF, pci->pp.dm_iatu + PCIE_ATU_LIMIT_OUTBOUND_6_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_LOWER_TARGET_OUTBOUND_6_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_UPPER_TARGET_OUTBOUND_6_GEN3);
+		writel_relaxed(0x5, pci->pp.dm_iatu + PCIE_ATU_CR1_OUTBOUND_7_GEN3);
+		writel_relaxed(0x90000000, pci->pp.dm_iatu + PCIE_ATU_CR2_OUTBOUND_7_GEN3);
+		writel_relaxed(0x200000, pci->pp.dm_iatu + PCIE_ATU_LOWER_BASE_OUTBOUND_7_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_UPPER_BASE_OUTBOUND_7_GEN3);
+		writel_relaxed(0x7FFFFF, pci->pp.dm_iatu + PCIE_ATU_LIMIT_OUTBOUND_7_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_LOWER_TARGET_OUTBOUND_7_GEN3);
+		writel_relaxed(0x0, pci->pp.dm_iatu + PCIE_ATU_UPPER_TARGET_OUTBOUND_7_GEN3);
+		return;
+	}
+
 	dw_pcie_writel_ob_unroll(pci, index, PCIE_ATU_UNR_LOWER_BASE,
 				 lower_32_bits(cpu_addr));
 	dw_pcie_writel_ob_unroll(pci, index, PCIE_ATU_UNR_UPPER_BASE,
@@ -317,6 +351,7 @@ void dw_pcie_prog_outbound_atu(struct dw_pcie *pci, int index, int type,
 	}
 	dev_err(pci->dev, "Outbound iATU is not being enabled\n");
 }
+EXPORT_SYMBOL(dw_pcie_prog_outbound_atu);
 
 static u32 dw_pcie_readl_ib_unroll(struct dw_pcie *pci, u32 index, u32 reg)
 {
@@ -474,6 +509,7 @@ int dw_pcie_link_up(struct dw_pcie *pci)
 	return ((val & PCIE_PORT_DEBUG1_LINK_UP) &&
 		(!(val & PCIE_PORT_DEBUG1_LINK_IN_TRAINING)));
 }
+EXPORT_SYMBOL(dw_pcie_link_up);
 
 void dw_pcie_upconfig_setup(struct dw_pcie *pci)
 {

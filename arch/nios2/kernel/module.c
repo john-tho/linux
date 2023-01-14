@@ -36,7 +36,7 @@ void *module_alloc(unsigned long size)
 }
 
 /* Free memory returned from module_alloc */
-void module_memfree(void *module_region)
+void module_memfree(void *module_region, unsigned size)
 {
 	kfree(module_region);
 }

@@ -1113,7 +1113,7 @@ unroll_preparation:
 	return ret;
 }
 
-static int rproc_start_subdevices(struct rproc *rproc)
+int rproc_start_subdevices(struct rproc *rproc)
 {
 	struct rproc_subdev *subdev;
 	int ret;
@@ -1136,8 +1136,9 @@ unroll_registration:
 
 	return ret;
 }
+EXPORT_SYMBOL(rproc_start_subdevices);
 
-static void rproc_stop_subdevices(struct rproc *rproc, bool crashed)
+void rproc_stop_subdevices(struct rproc *rproc, bool crashed)
 {
 	struct rproc_subdev *subdev;
 
@@ -1146,6 +1147,7 @@ static void rproc_stop_subdevices(struct rproc *rproc, bool crashed)
 			subdev->stop(subdev, crashed);
 	}
 }
+EXPORT_SYMBOL(rproc_stop_subdevices);
 
 static void rproc_unprepare_subdevices(struct rproc *rproc)
 {
@@ -1455,8 +1457,9 @@ static int rproc_trigger_auto_boot(struct rproc *rproc)
 	ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
 				      rproc->firmware, &rproc->dev, GFP_KERNEL,
 				      rproc, rproc_auto_boot_callback);
-	if (ret < 0)
+	if (ret < 0) {
 		dev_err(&rproc->dev, "request_firmware_nowait err: %d\n", ret);
+	}
 
 	return ret;
 }
@@ -2067,6 +2070,7 @@ struct rproc *rproc_alloc(struct device *dev, const char *name,
 	INIT_LIST_HEAD(&rproc->rvdevs);
 	INIT_LIST_HEAD(&rproc->subdevs);
 	INIT_LIST_HEAD(&rproc->dump_segments);
+	INIT_LIST_HEAD(&rproc->child);
 
 	INIT_WORK(&rproc->crash_handler, rproc_crash_handler_work);
 
@@ -2148,6 +2152,18 @@ int rproc_del(struct rproc *rproc)
 	return 0;
 }
 EXPORT_SYMBOL(rproc_del);
+
+void rproc_add_child(struct rproc *rproc_p, struct rproc_child *child)
+{
+	list_add(&child->node, &rproc_p->child);
+}
+EXPORT_SYMBOL(rproc_add_child);
+
+void rproc_remove_child(struct rproc *rproc_p, struct rproc_child *child)
+{
+	list_del(&child->node);
+}
+EXPORT_SYMBOL(rproc_remove_child);
 
 /**
  * rproc_add_subdev() - add a subdevice to a remoteproc

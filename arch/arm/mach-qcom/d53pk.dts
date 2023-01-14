@@ -1,0 +1,105 @@
+/dts-v1/;
+#include "ipq40xx.dtsi"
+
+/ {
+	model = "D53G_5HacD2HnD";
+
+	leds {
+		compatible = "leds-rb";
+		system-led {
+			red {
+				gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+			};
+			green {
+				gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>;
+			};
+			blue {
+				gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+				default-state = "on";
+			};
+		};
+		system-wlan-led {
+			gpios = <&tlmm 23 GPIO_ACTIVE_HIGH>;
+		};
+		system-eth-led {
+			gpios = <&tlmm 22 GPIO_ACTIVE_HIGH>;
+		};
+		poe-led {
+			gpios = <&tlmm 36 GPIO_ACTIVE_HIGH>;
+		};
+		mode-button {
+			gpios = <&tlmm 4 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		button {
+			gpios = <&tlmm 5 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		wps-button {
+			gpios = <&tlmm 42 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		usb-power-off {
+			gpios = <&tlmm 44 GPIO_ACTIVE_LOW>;
+		};
+		/* LTE signal strength LEDs: */
+		led1 {
+			gpios = <&tlmm 28 GPIO_ACTIVE_HIGH>;
+		};
+		led2 {
+			gpios = <&tlmm 29 GPIO_ACTIVE_HIGH>;
+		};
+		led3 {
+			gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
+		};
+		led4 {
+			gpios = <&tlmm 31 GPIO_ACTIVE_HIGH>;
+		};
+		led5 {
+			gpios = <&tlmm 32 GPIO_ACTIVE_HIGH>;
+		};
+		lte-ant-sw1 {
+			gpios = <&tlmm 45 GPIO_ACTIVE_HIGH>;
+		};
+		lte-ant-sw2 {
+			gpios = <&tlmm 46 GPIO_ACTIVE_HIGH>;
+		};
+		usb-power-key {
+			gpios = <&tlmm 49 GPIO_ACTIVE_HIGH>;
+		};
+		mpcie-power-off {
+			gpios = <&tlmm 51 GPIO_ACTIVE_LOW>;
+		};
+
+	};
+};
+
+&edma {
+	port_map = <4 3 2 1 0(-1)>;
+};
+
+&pcie0 {
+	perst-gpio = <&tlmm 49 GPIO_ACTIVE_HIGH>;
+	pwr-gpio = <&tlmm 51 GPIO_ACTIVE_HIGH>;
+	status = "ok";
+};
+
+&usb2 {
+	status = "ok";
+};
+
+&usb2_hs_phy {
+	status = "ok";
+};
+
+&usb3 {
+	status = "ok";
+};
+
+&usb3_ss_phy {
+	status = "ok";
+};
+
+&usb3_hs_phy {
+	status = "ok";
+};

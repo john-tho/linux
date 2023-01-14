@@ -958,6 +958,41 @@ config MIKROTIK_RB532
 	  Support the Mikrotik(tm) RouterBoard 532 series,
 	  based on the IDT RC32434 SoC.
 
+config MIPS_MIKROTIK
+	bool "Support for Mikrotik RB boards"
+	select SYS_HAS_EARLY_PRINTK
+	select CEVT_R4K
+	select CSRC_R4K
+	select DMA_NONCOHERENT
+	select HAVE_PCI
+	select IRQ_MIPS_CPU
+	select SYS_HAS_CPU_MIPS32_R1
+	select SYS_HAS_CPU_MIPS32_R2
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_SUPPORTS_BIG_ENDIAN
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select ZONE_DMA
+	select ARCH_REQUIRE_GPIOLIB
+	select SYS_HAS_EARLY_PRINTK
+	select MIPS_L1_CACHE_SHIFT_5
+	select USE_GENERIC_EARLY_PRINTK_8250
+	select ARCH_HAS_RESET_CONTROLLER
+	select RESET_CONTROLLER
+	select MIPS_CPU_SCACHE
+	select SYS_SUPPORTS_MULTITHREADING
+	select SYS_SUPPORTS_SMP
+	select SYS_SUPPORTS_MIPS_CPS
+	select CLKDEV_LOOKUP
+	select MIPS_GIC
+	select COMMON_CLK
+	select CLKSRC_MIPS_GIC
+	select BUILTIN_DTB
+	select USE_OF
+	select WEAK_REORDERING_BEYOND_LLSC
+	select MFD_CORE
+	help
+	  Say Y here to support all Mikrotik mips based routerboards
+
 config CAVIUM_OCTEON_SOC
 	bool "Cavium Networks Octeon SoC based boards"
 	select CEVT_R4K
@@ -1072,6 +1107,14 @@ config MIPS_PARAVIRT
 
 endchoice
 
+config SOFT_PCI_IO
+	bool "PCI IO software emulation on RB4xx"
+	depends on MIPS_MIKROTIK
+
+config MAPPED_KERNEL
+	bool "Mapped kernel support"
+	depends on MIPS_MIKROTIK
+
 source "arch/mips/alchemy/Kconfig"
 source "arch/mips/ath25/Kconfig"
 source "arch/mips/ath79/Kconfig"
@@ -1086,7 +1129,6 @@ source "arch/mips/lasat/Kconfig"
 source "arch/mips/pic32/Kconfig"
 source "arch/mips/pistachio/Kconfig"
 source "arch/mips/pmcs-msp71xx/Kconfig"
-source "arch/mips/ralink/Kconfig"
 source "arch/mips/sgi-ip27/Kconfig"
 source "arch/mips/sibyte/Kconfig"
 source "arch/mips/txx9/Kconfig"
@@ -1536,7 +1578,7 @@ config CPU_LOONGSON1C
 config CPU_MIPS32_R1
 	bool "MIPS32 Release 1"
 	depends on SYS_HAS_CPU_MIPS32_R1
-	select CPU_HAS_PREFETCH
+	select CPU_HAS_PREFETCH if !MIPS_MIKROTIK
 	select CPU_SUPPORTS_32BIT_KERNEL
 	select CPU_SUPPORTS_HIGHMEM
 	help
@@ -1553,7 +1595,7 @@ config CPU_MIPS32_R1
 config CPU_MIPS32_R2
 	bool "MIPS32 Release 2"
 	depends on SYS_HAS_CPU_MIPS32_R2
-	select CPU_HAS_PREFETCH
+	select CPU_HAS_PREFETCH if !MIPS_MIKROTIK
 	select CPU_SUPPORTS_32BIT_KERNEL
 	select CPU_SUPPORTS_HIGHMEM
 	select CPU_SUPPORTS_MSA

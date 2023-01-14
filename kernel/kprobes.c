@@ -111,7 +111,7 @@ void __weak *alloc_insn_page(void)
 
 void __weak free_insn_page(void *page)
 {
-	module_memfree(page);
+	module_memfree(page, PAGE_SIZE);
 }
 
 struct kprobe_insn_cache kprobe_insn_slots = {

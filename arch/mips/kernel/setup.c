@@ -170,7 +170,7 @@ early_param("rd_start", rd_start_early);
 
 static int __init rd_size_early(char *p)
 {
-	initrd_end += memparse(p, &p);
+	initrd_end = initrd_start + memparse(p, &p);
 	return 0;
 }
 early_param("rd_size", rd_size_early);
@@ -179,6 +179,8 @@ early_param("rd_size", rd_size_early);
 static unsigned long __init init_initrd(void)
 {
 	unsigned long end;
+//	initrd_start = 0x81000000;
+//	initrd_end = 0x81000000 + 9000000;
 
 	/*
 	 * Board specific code or command line parser should have

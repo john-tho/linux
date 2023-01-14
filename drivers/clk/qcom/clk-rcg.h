@@ -142,9 +142,12 @@ extern const struct clk_ops clk_dyn_rcg_ops;
  */
 struct clk_rcg2 {
 	u32			cmd_rcgr;
+	u8			cfg_offset;
 	u8			mnd_width;
 	u8			hid_width;
 	u8			safe_src_index;
+#define CLK_RCG2_HW_CONTROLLED	BIT(0)
+	u8			flags;
 	const struct parent_map	*parent_map;
 	const struct freq_tbl	*freq_tbl;
 	struct clk_regmap	clkr;

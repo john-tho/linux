@@ -158,7 +158,7 @@ struct arphdr {
 	unsigned char		ar_tip[4];		/* target IP address		*/
 #endif
 
-};
+} __attribute__((packed));
 
 
 #endif /* _UAPI_LINUX_IF_ARP_H */

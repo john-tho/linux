@@ -76,6 +76,10 @@ static int __init mvebu_cpu_reset_init(void)
 
 	np = of_find_compatible_node(NULL, NULL,
 				     "marvell,armada-370-cpu-reset");
+	if (!np)
+		np = of_find_compatible_node(NULL, NULL,
+					     "marvell,armada-msys-cpu-reset");
+	
 	if (np) {
 		res_idx = 0;
 	} else {

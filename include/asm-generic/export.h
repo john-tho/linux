@@ -57,10 +57,11 @@ __kstrtab_\name:
 #endif
 .endm
 
-#if defined(CONFIG_TRIM_UNUSED_KSYMS)
+#if defined(CONFIG_TRIM_UNUSED_KSYMS) && !defined(NO_TRIM_KSYMS)
 
 #include <linux/kconfig.h>
 #include <generated/autoksyms.h>
+#include <asm-generic/ksyms.h>
 
 .macro __ksym_marker sym
 	.section ".discard.ksym","a"

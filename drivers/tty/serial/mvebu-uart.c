@@ -703,7 +703,7 @@ static int mvebu_uart_console_setup(struct console *co, char *options)
 	port = &mvebu_uart_ports[co->index];
 
 	if (!port->mapbase || !port->membase) {
-		pr_debug("console on ttyMV%i not present\n", co->index);
+		pr_debug("console on ttyS%i not present\n", co->index);
 		return -ENODEV;
 	}
 
@@ -716,7 +716,7 @@ static int mvebu_uart_console_setup(struct console *co, char *options)
 static struct uart_driver mvebu_uart_driver;
 
 static struct console mvebu_uart_console = {
-	.name	= "ttyMV",
+	.name	= "ttyS",
 	.write	= mvebu_uart_console_write,
 	.device	= uart_console_device,
 	.setup	= mvebu_uart_console_setup,
@@ -739,7 +739,7 @@ console_initcall(mvebu_uart_console_init);
 static struct uart_driver mvebu_uart_driver = {
 	.owner			= THIS_MODULE,
 	.driver_name		= DRIVER_NAME,
-	.dev_name		= "ttyMV",
+	.dev_name		= "ttyS",
 	.nr			= MVEBU_NR_UARTS,
 #ifdef CONFIG_SERIAL_MVEBU_CONSOLE
 	.cons			= &mvebu_uart_console,

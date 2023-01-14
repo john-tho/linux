@@ -687,7 +687,7 @@ static int ipip6_rcv(struct sk_buff *skb)
 		tstats->rx_bytes += skb->len;
 		u64_stats_update_end(&tstats->syncp);
 
-		netif_rx(skb);
+		netif_receive_any(skb);
 
 		return 0;
 	}

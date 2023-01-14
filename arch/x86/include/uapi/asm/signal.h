@@ -13,8 +13,11 @@ struct siginfo;
 #ifndef __KERNEL__
 /* Here we must cater to libcs that poke about in kernel headers.  */
 
-#define NSIG		32
-typedef unsigned long sigset_t;
+#define _NSIG		64
+
+typedef struct {
+	unsigned long sig[2];
+} sigset_t;
 
 #endif /* __KERNEL__ */
 #endif /* __ASSEMBLY__ */
@@ -96,6 +99,7 @@ typedef unsigned long sigset_t;
 #ifndef __ASSEMBLY__
 
 
+#if 0
 # ifndef __KERNEL__
 /* Here we must cater to libcs that poke about in kernel headers.  */
 #ifdef __i386__
@@ -124,6 +128,7 @@ struct sigaction {
 
 #endif /* !__i386__ */
 # endif /* ! __KERNEL__ */
+#endif
 
 typedef struct sigaltstack {
 	void __user *ss_sp;

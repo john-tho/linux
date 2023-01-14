@@ -409,6 +409,10 @@ static noinline int btrfs_copy_from_user(loff_t pos, size_t write_bytes,
 		/*
 		 * Copy data from userspace to the current page
 		 */
+#ifdef CONFIG_HOMECACHE
+                /* Must call before entering atomic region. */
+                homecache_make_writable(page, 0);
+#endif
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, count);
 
 		/* Flush processor's dcache for this page */

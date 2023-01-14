@@ -38,7 +38,12 @@ static inline int is_kernel_text(unsigned long addr)
 
 static inline int is_kernel(unsigned long addr)
 {
+#ifdef __tile__
+	if (addr >= (unsigned long)_sinittext &&
+	    addr <= (unsigned long)_einittext)
+#else
 	if (addr >= (unsigned long)_stext && addr <= (unsigned long)_end)
+#endif
 		return 1;
 	return in_gate_area_no_mm(addr);
 }
@@ -87,7 +92,7 @@ extern int kallsyms_lookup_size_offset(unsigned long addr,
 const char *kallsyms_lookup(unsigned long addr,
 			    unsigned long *symbolsize,
 			    unsigned long *offset,
-			    char **modname, char *namebuf);
+			    struct module **mod, char *namebuf);
 
 /* Look up a kernel symbol and return it in a text buffer. */
 extern int sprint_symbol(char *buffer, unsigned long address);

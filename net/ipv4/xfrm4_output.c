@@ -78,6 +78,7 @@ static int __xfrm4_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 	}
 #endif
 
+	skb->dev = skb_dst(skb)->dev;
 	rcu_read_lock();
 	afinfo = xfrm_state_afinfo_get_rcu(x->outer_mode.family);
 	if (likely(afinfo))

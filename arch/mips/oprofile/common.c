@@ -11,10 +11,14 @@
 #include <linux/init.h>
 #include <linux/oprofile.h>
 #include <linux/smp.h>
+#include <asm/ptrace.h>
 #include <asm/cpu-info.h>
+#include <asm/rb/boards.h>
 #include <asm/cpu-type.h>
 
 #include "op_impl.h"
+
+extern int __init hrtimer_oprofile_init(struct oprofile_operations *);
 
 extern struct op_mips_model op_model_mipsxx_ops __weak;
 extern struct op_mips_model op_model_loongson2_ops __weak;
@@ -72,10 +76,29 @@ static void op_mips_stop(void)
 	on_each_cpu(model->cpu_stop, NULL, 1);
 }
 
+void mt_op_mips_backtrace(struct pt_regs * const regs, unsigned int depth)
+{
+	unsigned long ra = regs->regs[31];
+	unsigned long pc = regs->cp0_epc;
+	unsigned long sp = regs->regs[29];
+	int usermode = user_mode(regs);
+
+	while (depth-- && pc) {
+	    pc = find_prev_frame(pc, ra, &sp, usermode);
+	    if (pc) oprofile_add_trace((unsigned long) pc);
+	    ra = 0;
+	}
+}
+
 int __init oprofile_arch_init(struct oprofile_operations *ops)
 {
 	struct op_mips_model *lmodel = NULL;
 	int res;
+
+	ops->backtrace = mt_op_mips_backtrace;
+
+	if (hrtimer_oprofile_init(ops) == 0)
+		return 0;
 
 	switch (boot_cpu_type()) {
 	case CPU_5KC:
@@ -116,7 +139,7 @@ int __init oprofile_arch_init(struct oprofile_operations *ops)
 	 * Always set the backtrace. This allows unsupported CPU types to still
 	 * use timer-based oprofile.
 	 */
-	ops->backtrace = op_mips_backtrace;
+	ops->backtrace = mt_op_mips_backtrace;
 
 	if (!lmodel)
 		return -ENODEV;

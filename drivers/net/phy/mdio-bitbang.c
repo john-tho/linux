@@ -46,9 +46,13 @@ static void mdiobb_send_bit(struct mdiobb_ctrl *ctrl, int val)
 	const struct mdiobb_ops *ops = ctrl->ops;
 
 	ops->set_mdio_data(ctrl, val);
+#ifndef __arm__	
 	ndelay(MDIO_DELAY);
+#endif	
 	ops->set_mdc(ctrl, 1);
+#ifndef __arm__	
 	ndelay(MDIO_DELAY);
+#endif	
 	ops->set_mdc(ctrl, 0);
 }
 
@@ -57,9 +61,13 @@ static int mdiobb_get_bit(struct mdiobb_ctrl *ctrl)
 {
 	const struct mdiobb_ops *ops = ctrl->ops;
 
+#ifndef __arm__	
 	ndelay(MDIO_DELAY);
+#endif	
 	ops->set_mdc(ctrl, 1);
+#ifndef __arm__	
 	ndelay(MDIO_READ_DELAY);
+#endif	
 	ops->set_mdc(ctrl, 0);
 
 	return ops->get_mdio_data(ctrl);
@@ -161,6 +169,10 @@ static int mdiobb_read(struct mii_bus *bus, int phy, int reg)
 		mdiobb_cmd(ctrl, MDIO_READ, phy, reg);
 
 	ctrl->ops->set_mdio_dir(ctrl, 0);
+//	ctrl->ops->set_mdio_data(ctrl, 0);
+//	if (ctrl->ops->get_mdio_data(ctrl) != 0) {
+//		printk("\tmdio line is high\n");
+//	}
 
 	/* check the turnaround bit: the PHY should be driving it to zero, if this
 	 * PHY is listed in phy_ignore_ta_mask as having broken TA, skip that
@@ -170,6 +182,7 @@ static int mdiobb_read(struct mii_bus *bus, int phy, int reg)
 		/* PHY didn't drive TA low -- flush any bits it
 		 * may be trying to send.
 		 */
+//		printk("WARN: mdiobb rx missing turnaround bit\n");
 		for (i = 0; i < 32; i++)
 			mdiobb_get_bit(ctrl);
 

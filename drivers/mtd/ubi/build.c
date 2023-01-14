@@ -564,8 +564,14 @@ static int get_bad_peb_limit(const struct ubi_device *ubi, int max_beb_per1024)
 	 * distributed over the flash chip. So the worst case
 	 * is that all the bad eraseblocks of the chip are in
 	 * the MTD partition we are attaching (ubi->mtd).
+	 *
+	 * Except if partition is very small compared to entire flash size.
+	 * In this case we calculate proportional bad block count
+	 * and take twice as much just in case.
 	 */
 	device_size = mtd_get_device_size(ubi->mtd);
+	if (ubi->mtd->size < device_size >> 3)
+		device_size = ubi->mtd->size * 2;
 	device_pebs = mtd_div_by_eb(device_size, ubi->mtd);
 	limit = mult_frac(device_pebs, max_beb_per1024, 1024);
 

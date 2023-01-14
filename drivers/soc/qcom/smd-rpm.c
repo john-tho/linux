@@ -237,6 +237,8 @@ static const struct of_device_id qcom_smd_rpm_of_match[] = {
 	{ .compatible = "qcom,rpm-msm8998" },
 	{ .compatible = "qcom,rpm-sdm660" },
 	{ .compatible = "qcom,rpm-qcs404" },
+	{ .compatible = "qcom,rpm-sdx20" },
+	{ .compatible = "qcom,rpm-mdm9607" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, qcom_smd_rpm_of_match);

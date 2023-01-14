@@ -1,0 +1,542 @@
+#include <dt-bindings/interrupt-controller/mips-gic.h>
+#include <dt-bindings/gpio/gpio.h>
+
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "mediatek,mtk7621-soc";
+
+	cpus {
+		cpu@0 {
+			compatible = "mips,mips1004Kc";
+		};
+
+		cpu@1 {
+			compatible = "mips,mips1004Kc";
+		};
+	};
+
+	cpuintc: cpuintc@0 {
+		#address-cells = <0>;
+		#interrupt-cells = <1>;
+		interrupt-controller;
+		compatible = "mti,cpu-interrupt-controller";
+	};
+
+	cpuclock: cpuclock@0 {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+	};
+
+	hclk: hclk@0 {
+	        #clock-cells = <0>;
+		compatible = "fixed-clock";
+
+		clock-frequency = <220000000>;
+	};
+
+	sysclock: sysclock@0 {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+
+		clock-frequency	= <50000000>;
+	};
+
+	rb760-leds {
+		status = "disabled";
+		compatible = "leds-rb";
+
+		sfp_led {
+			label = "sfp-led";
+			gpios = <&gpio0 9 GPIO_ACTIVE_HIGH>;
+		};
+		usb_power_off {
+			label = "usb-power-off";
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+		};
+		power_led {
+			label = "power-led";
+			gpios = <&gpio0 16 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+		button {
+			label = "button";
+			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		mode_button {
+			label = "mode-button";
+			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+
+	m33-leds {
+		status = "disabled";
+		compatible = "leds-rb";
+
+		user_led {
+			label = "user-led";
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+		};
+		ext_pin3 {
+			label = "ext-pin3";
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			default-state = "input";
+		};
+		ext_pin5 {
+			label = "ext-pin5";
+			gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+			default-state = "input";
+		};
+		pcie_power_off {
+			label = "mpcie-power-off";
+			gpios = <&gpio0 9 GPIO_ACTIVE_LOW>;
+		};
+		pcie2_power_off {
+			label = "mpcie2-power-off";
+			gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+		};
+		usb_power_off {
+			label = "usb-power-off";
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+		};
+		button {
+			label = "button";
+			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+	};
+
+	m11-leds {
+		status = "disabled";
+		compatible = "leds-rb";
+
+		user_led {
+			label = "user-led";
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+		};
+		pcie_power_off {
+			label = "mpcie-power-off";
+			gpios = <&gpio0 9 GPIO_ACTIVE_LOW>;
+		};
+		button {
+			label = "button";
+			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		led1 {
+			label = "led1";
+			gpios = <&gpio0 26 GPIO_ACTIVE_LOW>;
+		};
+		led2 {
+			label = "led2";
+			gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
+		};
+		led3 {
+			label = "led3";
+			gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+		};
+		led4 {
+			label = "led4";
+			gpios = <&gpio0 23 GPIO_ACTIVE_LOW>;
+		};
+		led5 {
+			label = "led5";
+			gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
+		};
+	};
+
+	ltap-leds {
+		status = "disabled";
+		compatible = "leds-rb";
+
+		user_led {
+			label = "user-led";
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+		};
+		pcie_power_off {
+			label = "mpcie-power-off";
+			gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
+		};
+		pcie2_power_off {
+			label = "mpcie2-power-off";
+			gpios = <&gpio0 11 GPIO_ACTIVE_LOW>;
+		};
+		usb_power_off {
+			label = "usb-power-off";
+			gpios = <&gpio0 12 GPIO_ACTIVE_LOW>;
+		};
+		gps_reset {
+			label = "gps-reset";
+			gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+			default-state = "keep";
+		};
+		control {
+			label = "control";
+			gpios = <&gpio0 15 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+		button {
+			label = "button";
+			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		power_led {
+			label = "power-led";
+			gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>;
+			default-state = "on";
+		};
+		mode_button {
+			label = "mode-button";
+			gpios = <&gpio0 24 GPIO_ACTIVE_LOW>;
+			default-state = "input";
+		};
+		sim_select {
+			label = "sim-select";
+			gpios = <&gpio0 25 GPIO_ACTIVE_LOW>;
+		};
+		gps_ant_select {
+			label = "gps-ant-select";
+			gpios = <&gpio0 27 GPIO_ACTIVE_HIGH>;
+		};
+		lte_reset {
+			label = "lte-reset";
+			gpios = <&gpio0 29 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+		led1 {
+			label = "led1";
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
+			type = "wifi";
+		};
+		led2{
+			label = "led2";
+			gpios = <&gpio0 1 GPIO_ACTIVE_HIGH>;
+			type = "wifi";
+		};
+		led3 {
+			label = "led3";
+			gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+			type = "wifi";
+		};
+		led4 {
+			label = "led4";
+			gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+			type = "wifi";
+		};
+		led5 {
+			label = "led5";
+			gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
+			type = "wifi";
+		};
+	};
+	
+	beeper {
+	        status = "disabled";
+
+	        compatible = "rb,gpio-beep";
+
+		gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+	};
+
+	poe-simple {
+		status = "disabled";
+		compatible = "rb,poe-out-simple";
+		eth_port = <4>;
+		has_low_current_sense = <1>;
+		gpi_status = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		gpo_on = <&gpio0 17 GPIO_ACTIVE_HIGH>;
+	};
+
+	palmbus@1e000000 {
+		compatible = "palmbus";
+		reg = <0x1E000000 0x100000>;
+		ranges = <0x0 0x1E000000 0x0FFFFF>;
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		sysc@0 {
+			compatible = "mtk,mt7621-sysc";
+			reg = <0x0 0x100>;
+		};
+
+		wdt@100 {
+			compatible = "mtk,mt7621-wdt";
+			reg = <0x100 0x100>;
+		};
+
+		gpio0: gpio@600 {
+			#gpio-cells = <2>;
+			#interrupt-cells = <2>;
+			compatible = "mediatek,mt7621-gpio";
+			gpio-controller;
+			interrupt-controller;
+			reg = <0x600 0x100>;
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SHARED 12 IRQ_TYPE_LEVEL_HIGH>;
+		};
+
+		memc@5000 {
+			compatible = "mtk,mt7621-memc";
+			reg = <0x300 0x100>;
+		};
+
+		cpc@1fbf0000 {
+			     compatible = "mtk,mt7621-cpc";
+			     reg = <0x1fbf0000 0x8000>;
+		};
+
+		mc@1fbf8000 {
+			    compatible = "mtk,mt7621-mc";
+			    reg = <0x1fbf8000 0x8000>;
+ 		};
+
+		uartlite@c00 {
+			compatible = "ns16550a";
+			reg = <0xc00 0x100>;
+
+			clocks = <&sysclock>;
+
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SHARED 26 IRQ_TYPE_LEVEL_HIGH>;
+
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			no-loopback-test;
+		};
+
+		uartlite@e00 {
+			status = "disabled";
+			compatible = "ns16550a";
+			reg = <0xe00 0x100>;
+
+			clocks = <&sysclock>;
+
+			interrupt-parent = <&gic>;
+			interrupts = <GIC_SHARED 28 IRQ_TYPE_LEVEL_HIGH>;
+
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			no-loopback-test;
+		};
+		
+		spi@b00 {
+			status = "okay";
+
+			compatible = "ralink,mt7621-spi";
+			reg = <0xb00 0x100>;
+
+			clocks = <&hclk>;
+
+			resets = <&rstctrl 18>;
+			reset-names = "spi";
+
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			m25p80@0 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				status = "disabled";
+				compatible = "jedec,spi-nor";
+				reg = <0>;
+				spi-max-frequency = <30000000>;
+				m25p,chunked-io = <32>;
+	
+				partition@40000 {
+					 label = "RouterOS";
+					 reg = <0x40000 0xfc0000>;
+				};
+				partition@0 {
+					 label = "RouterBoot";
+					 reg = <0x0 0x40000>;
+				};
+			};
+
+			m25p80@1 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				status = "disabled";
+				compatible = "jedec,spi-nor";
+				reg = <1>;
+				spi-max-frequency = <30000000>;
+				m25p,chunked-io = <32>;
+	
+				partition@40000 {
+					 label = "RouterOS";
+					 reg = <0x40000 0xfc0000>;
+				};
+				partition@0 {
+					 label = "RouterBootFake";
+					 reg = <0x0 0x40000>;
+				};
+			};
+			
+			m25p80_boot@0 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				status = "disabled";
+				compatible = "jedec,spi-nor";
+				reg = <0>;
+				spi-max-frequency = <30000000>;
+				m25p,chunked-io = <32>;
+	
+				partition@0 {
+					 label = "RouterBoot";
+					 reg = <0x0 0x40000>;
+				};
+			};
+			
+			ts@1 {
+				status = "disabled";
+				
+				compatible = "rb-spi-ts";
+				reg = <1>;
+				spi-max-frequency = <2000000>;
+			};
+		};
+	};
+
+	rstctrl: rstctrl {
+		compatible = "ralink,rt2880-reset";
+		#reset-cells = <1>;
+	};
+
+	sdhci@1e130000 {
+		status = "disabled";
+
+		compatible = "ralink,mt7620-sdhci";
+		reg = <0x1E130000 0x4000>;
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 20 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	xhci@1e1c0000 {
+		status = "disabled";
+
+		compatible = "mediatek,mt8173-xhci";
+		reg = <0x1e1c0000 0x1000
+		       0x1e1d0700 0x0100>;
+		reg-names = "mac", "ippc";
+
+		clocks = <&sysclock>;
+		clock-names = "sys_ck";
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 22 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	crypto@1e004000 {
+		compatible = "mediatek,mt7621-crypto";
+		reg = <0x1e004000 0x1000>;
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 19 IRQ_TYPE_LEVEL_HIGH>;
+	};
+
+	gic: interrupt-controller@1fbc0000 {
+		compatible = "mti,gic";
+		reg = <0x1fbc0000 0x80>;
+
+		interrupt-controller;
+		#interrupt-cells = <3>;
+
+		mti,reserved-cpu-vectors = <7>;
+
+		interrupt-parent = <&cpuintc>;
+
+		timer {
+			compatible = "mti,gic-timer";
+			interrupts = <GIC_LOCAL 1 IRQ_TYPE_NONE>;
+			clocks = <&cpuclock>;
+		};
+
+	};
+
+	ethernet@1e100000 {
+		compatible = "ralink,mt7621-eth";
+		reg = <0x1e100000 10000>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		resets = <&rstctrl 6 &rstctrl 23>;
+		reset-names = "fe", "eth";
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 3 IRQ_TYPE_LEVEL_HIGH>;
+
+		mdio-bus {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			phy1f: ethernet-phy@1f {
+				reg = <0x1f>;
+				phy-mode = "rgmii";
+			};
+		};
+	};
+
+	gsw@1e110000 {
+		compatible = "ralink,mt7620a-gsw";
+		reg = <0x1e110000 8000>;
+	};
+
+	i2c@0 {
+	        compatible = "i2c-gpio";
+		sda-gpios = <&gpio0 3 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio0 4 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	};
+
+	pcie@1e140000 {
+		status = "disabled";
+		compatible = "mediatek,mt7621-pci";
+		reg = <0x1e140000 0x100
+			0x1e142000 0x100>;
+
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		device_type = "pci";
+
+		bus-range = <0 255>;
+		ranges = <
+			0x02000000 0 0x00000000 0x60000000 0 0x10000000 /* pci memory */
+			0x01000000 0 0x00000000 0x1e160000 0 0x00010000 /* io space */
+		>;
+
+		interrupt-parent = <&gic>;
+		interrupts = <GIC_SHARED 4 IRQ_TYPE_LEVEL_HIGH
+				GIC_SHARED 24 IRQ_TYPE_LEVEL_HIGH
+				GIC_SHARED 25 IRQ_TYPE_LEVEL_HIGH>;
+
+		pcie@0,0 {
+			reg = <0x0000 0 0 0 0>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges;
+			bus-range = <0x00 0xff>;
+		};
+
+		pcie@1,0 {
+			reg = <0x0800 0 0 0 0>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges;
+			bus-range = <0x00 0xff>;
+		};
+
+		pcie@2,0 {
+			reg = <0x1000 0 0 0 0>;
+			#address-cells = <3>;
+			#size-cells = <2>;
+			ranges;
+			bus-range = <0x00 0xff>;
+		};
+	};
+};

@@ -90,6 +90,7 @@
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
 #include <linux/skbuff.h>
+#include <linux/kthread.h>
 #include <linux/bpf.h>
 #include <linux/bpf_trace.h>
 #include <net/net_namespace.h>
@@ -398,6 +399,29 @@ static RAW_NOTIFIER_HEAD(netdev_chain);
 DEFINE_PER_CPU_ALIGNED(struct softnet_data, softnet_data);
 EXPORT_PER_CPU_SYMBOL(softnet_data);
 
+void (*ipv4_routing_changed)(void);
+void (*fp_ptype_all_changed)(int);
+void (*fp_nf_changed)(int, int pf);
+void (*fp_xfrm_changed)(int);
+EXPORT_SYMBOL(ipv4_routing_changed);
+EXPORT_SYMBOL(fp_ptype_all_changed);
+EXPORT_SYMBOL(fp_nf_changed);
+EXPORT_SYMBOL(fp_xfrm_changed);
+
+DEFINE_PER_CPU(unsigned, per_cpu_netif_receive_depth);
+EXPORT_PER_CPU_SYMBOL(per_cpu_netif_receive_depth);
+
+void vlog_message(unsigned *, const char *, va_list);
+void kernel_log_message(unsigned *topics, const char *format, ...) {
+	void (*lm)(unsigned *, const char *, va_list) = symbol_get(vlog_message);
+	va_list aaa;
+	va_start(aaa, format);
+	if (lm) {
+		lm(topics, format, aaa);
+		symbol_put(vlog_message);
+	}
+}
+
 /*******************************************************************************
  *
  *		Protocol management and registration routines
@@ -448,6 +472,9 @@ void dev_add_pack(struct packet_type *pt)
 	struct list_head *head = ptype_head(pt);
 
 	spin_lock(&ptype_lock);
+	if (pt->type == htons(ETH_P_ALL)) {
+		if (fp_ptype_all_changed) fp_ptype_all_changed(1);
+	}
 	list_add_rcu(&pt->list, head);
 	spin_unlock(&ptype_lock);
 }
@@ -476,6 +503,9 @@ void __dev_remove_pack(struct packet_type *pt)
 	list_for_each_entry(pt1, head, list) {
 		if (pt == pt1) {
 			list_del_rcu(&pt->list);
+			if (pt->type == htons(ETH_P_ALL)) {
+				if (fp_ptype_all_changed) fp_ptype_all_changed(-1);
+			}
 			goto out;
 		}
 	}
@@ -1387,6 +1417,12 @@ void netdev_state_change(struct net_device *dev)
 }
 EXPORT_SYMBOL(netdev_state_change);
 
+void netdev_l2mtu_change(struct net_device *dev)
+{
+	call_netdevice_notifiers(NETDEV_CHANGEL2MTU, dev);
+}
+EXPORT_SYMBOL(netdev_l2mtu_change);
+
 /**
  * netdev_notify_peers - notify network peers about existence of @dev
  * @dev: network device
@@ -1405,6 +1441,27 @@ void netdev_notify_peers(struct net_device *dev)
 	rtnl_unlock();
 }
 EXPORT_SYMBOL(netdev_notify_peers);
+
+static int napi_threaded_poll(void *data);
+
+static int napi_kthread_create(struct napi_struct *n)
+{
+	int err = 0;
+
+	/* Create and wake up the kthread once to put it in
+	 * TASK_INTERRUPTIBLE mode to avoid the blocked task
+	 * warning and work with loadavg.
+	 */
+	n->thread = kthread_run(napi_threaded_poll, n, "napi/%s-%d",
+				n->dev->name, n->napi_id);
+	if (IS_ERR(n->thread)) {
+		err = PTR_ERR(n->thread);
+		pr_err("kthread_run failed with err %d\n", err);
+		n->thread = NULL;
+	}
+
+	return err;
+}
 
 static int __dev_open(struct net_device *dev, struct netlink_ext_ack *extack)
 {
@@ -3517,6 +3574,15 @@ static struct sk_buff *validate_xmit_vlan(struct sk_buff *skb,
 	return skb;
 }
 
+int (*rx_handler_hook)(struct sk_buff *);
+int (*tx_handler_hook)(struct sk_buff *);
+struct static_key rx_handler_jump = STATIC_KEY_INIT_FALSE;
+struct static_key tx_handler_jump = STATIC_KEY_INIT_FALSE;
+EXPORT_SYMBOL(rx_handler_hook);
+EXPORT_SYMBOL(tx_handler_hook);
+EXPORT_SYMBOL(rx_handler_jump);
+EXPORT_SYMBOL(tx_handler_jump);
+
 int skb_csum_hwoffload_help(struct sk_buff *skb,
 			    const netdev_features_t features)
 {
@@ -3536,6 +3602,11 @@ static struct sk_buff *validate_xmit_skb(struct sk_buff *skb, struct net_device 
 	skb = validate_xmit_vlan(skb, features);
 	if (unlikely(!skb))
 		goto out_null;
+
+	if (static_key_false(&tx_handler_jump)) {
+		if (tx_handler_hook(skb))
+			goto out_null;
+	}
 
 	skb = sk_validate_xmit_skb(skb, dev);
 	if (unlikely(!skb))
@@ -3615,7 +3686,9 @@ static void qdisc_pkt_len_init(struct sk_buff *skb)
 {
 	const struct skb_shared_info *shinfo = skb_shinfo(skb);
 
+#if 0
 	qdisc_skb_cb(skb)->pkt_len = skb->len;
+#endif
 
 	/* To get more precise estimation of bytes sent on wire,
 	 * we add to pkt_len the headers size of all segments
@@ -3648,13 +3721,24 @@ static void qdisc_pkt_len_init(struct sk_buff *skb)
 			gso_segs = DIV_ROUND_UP(skb->len - hdr_len,
 						shinfo->gso_size);
 
+#if 0
 		qdisc_skb_cb(skb)->pkt_len += (gso_segs - 1) * hdr_len;
+#endif
 	}
 }
 
+struct ll_classify_result {
+    u32 classid;
+    struct Qdisc *qdisc;
+};
+void (*dev_lockless_classify)(struct sk_buff *skb, void *arg,
+			      struct ll_classify_result *res);
+EXPORT_SYMBOL(dev_lockless_classify);
+
 static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				 struct net_device *dev,
-				 struct netdev_queue *txq)
+				 struct netdev_queue *txq,
+				 struct ll_classify_result res)
 {
 	spinlock_t *root_lock = qdisc_lock(q);
 	struct sk_buff *to_free = NULL;
@@ -3696,6 +3780,10 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 
 		qdisc_bstats_update(q, skb);
 
+		if (unlikely(contended)) {
+		    spin_unlock(&q->busylock);
+		    contended = false;
+		}
 		if (sch_direct_xmit(skb, q, dev, txq, root_lock, true)) {
 			if (unlikely(contended)) {
 				spin_unlock(&q->busylock);
@@ -3707,7 +3795,19 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		qdisc_run_end(q);
 		rc = NET_XMIT_SUCCESS;
 	} else {
-		rc = q->enqueue(skb, q, &to_free) & NET_XMIT_MASK;
+		if (res.classid) {
+			rc = q->ops->enqueue_classified(skb, q, &to_free, res.classid);
+			if (rc) {
+				rc = NET_XMIT_SUCCESS | __NET_XMIT_BYPASS;
+			}
+			else {
+				rc = NET_XMIT_DROP;
+			}
+		}
+		else {
+		    rc = q->enqueue(skb, q, &to_free);
+		}
+		rc &= NET_XMIT_MASK;
 		if (qdisc_run_begin(q)) {
 			if (unlikely(contended)) {
 				spin_unlock(&q->busylock);
@@ -3947,6 +4047,7 @@ struct netdev_queue *netdev_core_pick_tx(struct net_device *dev,
 	skb_set_queue_mapping(skb, queue_index);
 	return netdev_get_tx_queue(dev, queue_index);
 }
+EXPORT_SYMBOL(netdev_core_pick_tx);
 
 /**
  *	__dev_queue_xmit - transmit a buffer
@@ -4018,9 +4119,24 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
 
 	trace_net_dev_queue(skb);
 	if (q->enqueue) {
-		rc = __dev_xmit_skb(skb, q, dev, txq);
+		struct ll_classify_result res = { 0 };
+		void *arg = rcu_dereference_bh(q->lockless_classify_arg);
+		if (arg) {
+			dev_lockless_classify(skb, arg, &res);
+			if (!res.classid) {
+				goto xmit;
+			}
+		}
+		else {
+		    if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) && !netif_xmit_stopped(txq)) {
+			    // can bypass the queue if it is empty and netdev accepts packets, since xmit_stopped is checked again below will need a workaround there
+			    goto xmit;
+		    }
+		}
+		rc = __dev_xmit_skb(skb, q, dev, txq, res);
 		goto out;
 	}
+xmit:
 
 	/* The device has no queue. Common case for software devices:
 	 * loopback, all the sorts of tunnels...
@@ -4055,6 +4171,24 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
 					HARD_TX_UNLOCK(dev, txq);
 					goto out;
 				}
+				kfree_skb_list(skb);
+				rc = NETDEV_TX_OK;
+				HARD_TX_UNLOCK(dev, txq);
+				goto out;
+			}
+			else {
+				if (q->enqueue) {
+					// since xmit_stopped is checked again here - queue the packet if netdev stopped now - to avoid occasionally dropping packets that should go into queue
+					struct ll_classify_result res = { 0 };
+					HARD_TX_UNLOCK(dev, txq);
+					rc = __dev_xmit_skb(skb, q, dev, txq, res);
+					goto out;
+				}
+				this_cpu_ptr(dev->fp.stats)->queue_stopped_drop += 1;
+				kfree_skb_list(skb);
+				rc = NET_XMIT_DROP;
+				HARD_TX_UNLOCK(dev, txq);
+				goto out;
 			}
 			HARD_TX_UNLOCK(dev, txq);
 			net_crit_ratelimited("Virtual device %s asks to queue packet!\n",
@@ -4064,8 +4198,13 @@ static int __dev_queue_xmit(struct sk_buff *skb, struct net_device *sb_dev)
 			 * unfortunately
 			 */
 recursion_alert:
-			net_crit_ratelimited("Dead loop on virtual device %s, fix it urgently!\n",
-					     dev->name);
+			if (net_ratelimit()) {
+				static unsigned topics[] = { 61, 2, 0 }; // intrerface,warning
+				kernel_log_message(topics, "*%08x: tx loop on interface (1)", dev->ifindex);
+				printk(KERN_CRIT "Dead loop on virtual device "
+				       "%s, fix it urgently!\n", dev->name);
+				WARN_ON(1);
+			}
 		}
 	}
 
@@ -4153,6 +4292,29 @@ int gro_normal_batch __read_mostly = 8;
 static inline void ____napi_schedule(struct softnet_data *sd,
 				     struct napi_struct *napi)
 {
+	struct task_struct *thread;
+
+	if (test_bit(NAPI_STATE_THREADED, &napi->state)) {
+		/* Paired with smp_mb__before_atomic() in
+		 * napi_enable()/dev_set_threaded().
+		 * Use READ_ONCE() to guarantee a complete
+		 * read on napi->thread. Only call
+		 * wake_up_process() when it's not NULL.
+		 */
+		thread = READ_ONCE(napi->thread);
+		if (thread) {
+			/* Avoid doing set_bit() if the thread is in
+			 * INTERRUPTIBLE state, cause napi_thread_wait()
+			 * makes sure to proceed with napi polling
+			 * if the thread is explicitly woken from here.
+			 */
+			if (READ_ONCE(thread->state) != TASK_INTERRUPTIBLE)
+				set_bit(NAPI_STATE_SCHED_THREADED, &napi->state);
+			wake_up_process(thread);
+			return;
+		}
+	}
+
 	list_add_tail(&napi->poll_list, &sd->poll_list);
 	__raise_softirq_irqoff(NET_RX_SOFTIRQ);
 }
@@ -5034,6 +5196,11 @@ another_round:
 			goto out;
 	}
 
+	if (static_key_false(&rx_handler_jump)) {
+		if (rx_handler_hook(skb))
+			goto out;
+	}
+
 	if (skb_skip_tc_classify(skb))
 		goto skip_classify;
 
@@ -5068,7 +5235,7 @@ skip_classify:
 	if (pfmemalloc && !skb_pfmemalloc_protocol(skb))
 		goto drop;
 
-	if (skb_vlan_tag_present(skb)) {
+	if (skb_vlan_tag_present(skb) || ANY_VLAN_PROTO_N(skb->protocol)) {
 		if (pt_prev) {
 			ret = deliver_skb(skb, pt_prev, orig_dev);
 			pt_prev = NULL;
@@ -5135,7 +5302,7 @@ check_vlan_id:
 		 * and set skb->priority like in vlan_do_receive()
 		 * For the time being, just ignore Priority Code Point
 		 */
-		__vlan_hwaccel_clear_tag(skb);
+//		__vlan_hwaccel_clear_tag(skb);
 	}
 
 	type = skb->protocol;
@@ -5161,10 +5328,12 @@ check_vlan_id:
 		*ppt_prev = pt_prev;
 	} else {
 drop:
+#if 0		
 		if (!deliver_exact)
 			atomic_long_inc(&skb->dev->rx_dropped);
 		else
 			atomic_long_inc(&skb->dev->rx_nohandler);
+#endif		
 		kfree_skb(skb);
 		/* Jamal, now you will not able to escape explaining
 		 * me how you were going to use this. :-)
@@ -5529,7 +5698,7 @@ static void flush_all_backlogs(void)
 }
 
 /* Pass the currently batched GRO_NORMAL SKBs up to the stack. */
-static void gro_normal_list(struct napi_struct *napi)
+void gro_normal_list(struct napi_struct *napi)
 {
 	if (!napi->rx_count)
 		return;
@@ -5537,6 +5706,7 @@ static void gro_normal_list(struct napi_struct *napi)
 	INIT_LIST_HEAD(&napi->rx_list);
 	napi->rx_count = 0;
 }
+EXPORT_SYMBOL(gro_normal_list);
 
 /* Queue one GRO_NORMAL SKB up for list processing. If batch size exceeded,
  * pass the whole batch up to the stack.
@@ -6268,7 +6438,9 @@ bool napi_complete_done(struct napi_struct *n, int work_done)
 
 		WARN_ON_ONCE(!(val & NAPIF_STATE_SCHED));
 
-		new = val & ~(NAPIF_STATE_MISSED | NAPIF_STATE_SCHED);
+		new = val & ~(NAPIF_STATE_MISSED | NAPIF_STATE_SCHED |
+			      NAPIF_STATE_SCHED_THREADED |
+			      NAPIF_STATE_PREFER_BUSY_POLL);
 
 		/* If STATE_MISSED was set, leave STATE_SCHED set,
 		 * because we will call napi->poll() one more time.
@@ -6304,8 +6476,29 @@ static struct napi_struct *napi_by_id(unsigned int napi_id)
 
 #define BUSY_POLL_BUDGET 8
 
-static void busy_poll_stop(struct napi_struct *napi, void *have_poll_lock)
+static void __busy_poll_stop(struct napi_struct *napi, bool skip_schedule)
 {
+	if (!skip_schedule) {
+		gro_normal_list(napi);
+		__napi_schedule(napi);
+		return;
+	}
+
+	if (napi->gro_bitmask) {
+		/* flush too old packets
+		 * If HZ < 1000, flush all packets.
+		 */
+		napi_gro_flush(napi, HZ >= 1000);
+	}
+
+	gro_normal_list(napi);
+	clear_bit(NAPI_STATE_SCHED, &napi->state);
+}
+
+static void busy_poll_stop(struct napi_struct *napi, void *have_poll_lock, bool prefer_busy_poll)
+{
+	bool skip_schedule = false;
+	unsigned long timeout;
 	int rc;
 
 	/* Busy polling means there is a high chance device driver hard irq
@@ -6322,6 +6515,15 @@ static void busy_poll_stop(struct napi_struct *napi, void *have_poll_lock)
 
 	local_bh_disable();
 
+	if (prefer_busy_poll) {
+		napi->defer_hard_irqs_count = READ_ONCE(napi->dev->napi_defer_hard_irqs);
+		timeout = READ_ONCE(napi->dev->gro_flush_timeout);
+		if (napi->defer_hard_irqs_count && timeout) {
+			hrtimer_start(&napi->timer, ns_to_ktime(timeout), HRTIMER_MODE_REL_PINNED);
+			skip_schedule = true;
+		}
+	}
+
 	/* All we really want here is to re-enable device interrupts.
 	 * Ideally, a new ndo_busy_poll_stop() could avoid another round.
 	 */
@@ -6332,19 +6534,14 @@ static void busy_poll_stop(struct napi_struct *napi, void *have_poll_lock)
 	 */
 	trace_napi_poll(napi, rc, BUSY_POLL_BUDGET);
 	netpoll_poll_unlock(have_poll_lock);
-	if (rc == BUSY_POLL_BUDGET) {
-		/* As the whole budget was spent, we still own the napi so can
-		 * safely handle the rx_list.
-		 */
-		gro_normal_list(napi);
-		__napi_schedule(napi);
-	}
+	if (rc == BUSY_POLL_BUDGET)
+		__busy_poll_stop(napi, skip_schedule);
 	local_bh_enable();
 }
 
 void napi_busy_loop(unsigned int napi_id,
 		    bool (*loop_end)(void *, unsigned long),
-		    void *loop_end_arg)
+		    void *loop_end_arg, bool prefer_busy_poll)
 {
 	unsigned long start_time = loop_end ? busy_loop_current_time() : 0;
 	int (*napi_poll)(struct napi_struct *napi, int budget);
@@ -6372,12 +6569,18 @@ restart:
 			 * we avoid dirtying napi->state as much as we can.
 			 */
 			if (val & (NAPIF_STATE_DISABLE | NAPIF_STATE_SCHED |
-				   NAPIF_STATE_IN_BUSY_POLL))
+				   NAPIF_STATE_IN_BUSY_POLL)) {
+				if (prefer_busy_poll)
+					set_bit(NAPI_STATE_PREFER_BUSY_POLL, &napi->state);
 				goto count;
+			}
 			if (cmpxchg(&napi->state, val,
 				    val | NAPIF_STATE_IN_BUSY_POLL |
-					  NAPIF_STATE_SCHED) != val)
+					  NAPIF_STATE_SCHED) != val) {
+				if (prefer_busy_poll)
+					set_bit(NAPI_STATE_PREFER_BUSY_POLL, &napi->state);
 				goto count;
+			}
 			have_poll_lock = netpoll_poll_lock(napi);
 			napi_poll = napi->poll;
 		}
@@ -6395,7 +6598,7 @@ count:
 
 		if (unlikely(need_resched())) {
 			if (napi_poll)
-				busy_poll_stop(napi, have_poll_lock);
+				busy_poll_stop(napi, have_poll_lock, prefer_busy_poll);
 			preempt_enable();
 			rcu_read_unlock();
 			cond_resched();
@@ -6406,7 +6609,7 @@ count:
 		cpu_relax();
 	}
 	if (napi_poll)
-		busy_poll_stop(napi, have_poll_lock);
+		busy_poll_stop(napi, have_poll_lock, prefer_busy_poll);
 	preempt_enable();
 out:
 	rcu_read_unlock();
@@ -6464,8 +6667,10 @@ static enum hrtimer_restart napi_watchdog(struct hrtimer *timer)
 	 * NAPI_STATE_MISSED, since we do not react to a device IRQ.
 	 */
 	if (napi->gro_bitmask && !napi_disable_pending(napi) &&
-	    !test_and_set_bit(NAPI_STATE_SCHED, &napi->state))
+	    !test_and_set_bit(NAPI_STATE_SCHED, &napi->state)) {
+		clear_bit(NAPI_STATE_PREFER_BUSY_POLL, &napi->state);
 		__napi_schedule_irqoff(napi);
+	}
 
 	return HRTIMER_NORESTART;
 }
@@ -6480,6 +6685,50 @@ static void init_gro_hash(struct napi_struct *napi)
 	}
 	napi->gro_bitmask = 0;
 }
+
+int dev_set_threaded(struct net_device *dev, bool threaded)
+{
+	struct napi_struct *napi;
+	int err = 0;
+
+	if (dev->threaded == threaded)
+		return 0;
+
+	if (threaded) {
+		list_for_each_entry(napi, &dev->napi_list, dev_list) {
+			if (!napi->thread) {
+				err = napi_kthread_create(napi);
+				if (err) {
+					threaded = false;
+					break;
+				}
+			}
+		}
+	}
+
+	dev->threaded = threaded;
+
+	/* Make sure kthread is created before THREADED bit
+	 * is set.
+	 */
+	smp_mb__before_atomic();
+
+	/* Setting/unsetting threaded mode on a napi might not immediately
+	 * take effect, if the current napi instance is actively being
+	 * polled. In this case, the switch between threaded mode and
+	 * softirq mode will happen in the next round of napi_schedule().
+	 * This should not cause hiccups/stalls to the live traffic.
+	 */
+	list_for_each_entry(napi, &dev->napi_list, dev_list) {
+		if (threaded)
+			set_bit(NAPI_STATE_THREADED, &napi->state);
+		else
+			clear_bit(NAPI_STATE_THREADED, &napi->state);
+	}
+
+	return err;
+}
+EXPORT_SYMBOL(dev_set_threaded);
 
 void netif_napi_add(struct net_device *dev, struct napi_struct *napi,
 		    int (*poll)(struct napi_struct *, int), int weight)
@@ -6503,6 +6752,12 @@ void netif_napi_add(struct net_device *dev, struct napi_struct *napi,
 #endif
 	set_bit(NAPI_STATE_SCHED, &napi->state);
 	napi_hash_add(napi);
+	/* Create kthread for this napi if dev->threaded is set.
+	 * Clear dev->threaded if kthread creation failed so that
+	 * threaded mode will not be enabled in napi_enable().
+	 */
+	if (dev->threaded && napi_kthread_create(napi))
+		dev->threaded = 0;
 }
 EXPORT_SYMBOL(netif_napi_add);
 
@@ -6518,9 +6773,29 @@ void napi_disable(struct napi_struct *n)
 
 	hrtimer_cancel(&n->timer);
 
+	clear_bit(NAPI_STATE_PREFER_BUSY_POLL, &n->state);
 	clear_bit(NAPI_STATE_DISABLE, &n->state);
+	clear_bit(NAPI_STATE_THREADED, &n->state);
 }
 EXPORT_SYMBOL(napi_disable);
+
+/**
+ *	napi_enable - enable NAPI scheduling
+ *	@n: NAPI context
+ *
+ * Resume NAPI from being scheduled on this context.
+ * Must be paired with napi_disable.
+ */
+void napi_enable(struct napi_struct *n)
+{
+	BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
+	smp_mb__before_atomic();
+	clear_bit(NAPI_STATE_SCHED, &n->state);
+	clear_bit(NAPI_STATE_NPSVC, &n->state);
+	if (n->dev->threaded && n->thread)
+		set_bit(NAPI_STATE_THREADED, &n->state);
+}
+EXPORT_SYMBOL(napi_enable);
 
 static void flush_gro_hash(struct napi_struct *napi)
 {
@@ -6546,17 +6821,17 @@ void netif_napi_del(struct napi_struct *napi)
 
 	flush_gro_hash(napi);
 	napi->gro_bitmask = 0;
+
+	if (napi->thread) {
+		kthread_stop(napi->thread);
+		napi->thread = NULL;
+	}
 }
 EXPORT_SYMBOL(netif_napi_del);
 
-static int napi_poll(struct napi_struct *n, struct list_head *repoll)
+static int __napi_poll(struct napi_struct *n, bool *repoll)
 {
-	void *have;
 	int work, weight;
-
-	list_del_init(&n->poll_list);
-
-	have = netpoll_poll_lock(n);
 
 	weight = n->weight;
 
@@ -6575,7 +6850,7 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 	WARN_ON_ONCE(work > weight);
 
 	if (likely(work < weight))
-		goto out_unlock;
+		return work;
 
 	/* Drivers must not modify the NAPI state if they
 	 * consume the entire weight.  In such cases this code
@@ -6584,7 +6859,20 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 	 */
 	if (unlikely(napi_disable_pending(n))) {
 		napi_complete(n);
-		goto out_unlock;
+		return work;
+	}
+
+	/* The NAPI context has more processing work, but busy-polling
+	 * is preferred. Exit early.
+	 */
+	if (napi_prefer_busy_poll(n)) {
+		if (napi_complete_done(n, work)) {
+			/* If timeout is not set, we need to make sure
+			 * that the NAPI is re-scheduled.
+			 */
+			napi_schedule(n);
+		}
+		return work;
 	}
 
 	if (n->gro_bitmask) {
@@ -6602,15 +6890,86 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 	if (unlikely(!list_empty(&n->poll_list))) {
 		pr_warn_once("%s: Budget exhausted after napi rescheduled\n",
 			     n->dev ? n->dev->name : "backlog");
-		goto out_unlock;
+		return work;
 	}
 
+	*repoll = true;
+
+	return work;
+}
+
+static int napi_poll(struct napi_struct *n, struct list_head *repoll)
+{
+	bool do_repoll = false;
+	void *have;
+	int work;
+
+	list_del_init(&n->poll_list);
+
+	have = netpoll_poll_lock(n);
+
+	work = __napi_poll(n, &do_repoll);
+
+	if (do_repoll)
 	list_add_tail(&n->poll_list, repoll);
 
-out_unlock:
 	netpoll_poll_unlock(have);
 
 	return work;
+}
+
+static int napi_thread_wait(struct napi_struct *napi)
+{
+	bool woken = false;
+
+	set_current_state(TASK_INTERRUPTIBLE);
+
+	while (!kthread_should_stop() && !napi_disable_pending(napi)) {
+		/* Testing SCHED_THREADED bit here to make sure the current
+		 * kthread owns this napi and could poll on this napi.
+		 * Testing SCHED bit is not enough because SCHED bit might be
+		 * set by some other busy poll thread or by napi_disable().
+		 */
+		if (test_bit(NAPI_STATE_SCHED_THREADED, &napi->state) || woken) {
+			WARN_ON(!list_empty(&napi->poll_list));
+			__set_current_state(TASK_RUNNING);
+			return 0;
+		}
+
+		schedule();
+		/* woken being true indicates this thread owns this napi. */
+		woken = true;
+		set_current_state(TASK_INTERRUPTIBLE);
+	}
+	__set_current_state(TASK_RUNNING);
+	return -1;
+}
+
+static int napi_threaded_poll(void *data)
+{
+	struct napi_struct *napi = data;
+	void *have;
+
+	while (!napi_thread_wait(napi)) {
+		for (;;) {
+			bool repoll = false;
+
+			local_bh_disable();
+
+			have = netpoll_poll_lock(napi);
+			__napi_poll(napi, &repoll);
+			netpoll_poll_unlock(have);
+
+			__kfree_skb_flush();
+			local_bh_enable();
+
+			if (!repoll)
+				break;
+
+			cond_resched();
+		}
+	}
+	return 0;
 }
 
 static __latent_entropy void net_rx_action(struct softirq_action *h)
@@ -7352,8 +7711,9 @@ static int netdev_adjacent_sysfs_add(struct net_device *dev,
 
 	sprintf(linkname, dev_list == &dev->adj_list.upper ?
 		"upper_%s" : "lower_%s", adj_dev->name);
-	return sysfs_create_link(&(dev->dev.kobj), &(adj_dev->dev.kobj),
-				 linkname);
+//	return sysfs_create_link(&(dev->dev.kobj), &(adj_dev->dev.kobj),
+//				 linkname);
+	return 0;
 }
 static void netdev_adjacent_sysfs_del(struct net_device *dev,
 			       char *name,
@@ -7363,7 +7723,7 @@ static void netdev_adjacent_sysfs_del(struct net_device *dev,
 
 	sprintf(linkname, dev_list == &dev->adj_list.upper ?
 		"upper_%s" : "lower_%s", name);
-	sysfs_remove_link(&(dev->dev.kobj), linkname);
+//	sysfs_remove_link(&(dev->dev.kobj), linkname);
 }
 
 static inline bool netdev_adjacent_is_neigh_list(struct net_device *dev,
@@ -7415,10 +7775,12 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 
 	/* Ensure that master link is always the first item in list. */
 	if (master) {
+		/*
 		ret = sysfs_create_link(&(dev->dev.kobj),
 					&(adj_dev->dev.kobj), "master");
 		if (ret)
 			goto remove_symlinks;
+		*/
 
 		list_add_rcu(&adj->list, dev_list);
 	} else {
@@ -7427,9 +7789,6 @@ static int __netdev_adjacent_dev_insert(struct net_device *dev,
 
 	return 0;
 
-remove_symlinks:
-	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
-		netdev_adjacent_sysfs_del(dev, adj_dev->name, dev_list);
 free_adj:
 	kfree(adj);
 	dev_put(adj_dev);
@@ -7464,8 +7823,8 @@ static void __netdev_adjacent_dev_remove(struct net_device *dev,
 		return;
 	}
 
-	if (adj->master)
-		sysfs_remove_link(&(dev->dev.kobj), "master");
+//	if (adj->master)
+//		sysfs_remove_link(&(dev->dev.kobj), "master");
 
 	if (netdev_adjacent_is_neigh_list(dev, adj_dev, dev_list))
 		netdev_adjacent_sysfs_del(dev, adj_dev->name, dev_list);
@@ -8114,11 +8473,16 @@ int __dev_change_flags(struct net_device *dev, unsigned int flags,
 	 *	Set the flags on our device.
 	 */
 
-	dev->flags = (flags & (IFF_DEBUG | IFF_NOTRAILERS | IFF_NOARP |
+	dev->flags = (flags & (IFF_DEBUG | IFF_NOTRAILERS | IFF_NOARP | IFF_NOARP4 |
 			       IFF_DYNAMIC | IFF_MULTICAST | IFF_PORTSEL |
 			       IFF_AUTOMEDIA)) |
 		     (dev->flags & (IFF_UP | IFF_VOLATILE | IFF_PROMISC |
 				    IFF_ALLMULTI));
+
+	/* make IPv4 flush all neighbors & route cache */
+	if ((old_flags ^ flags) & IFF_NOARP4)
+		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	    
 
 	/*
 	 *	Load in the correct multicast list now the flags have changed.
@@ -8243,7 +8607,7 @@ int dev_validate_mtu(struct net_device *dev, int new_mtu,
 		return -EINVAL;
 	}
 
-	if (dev->max_mtu > 0 && new_mtu > dev->max_mtu) {
+	if (!dev->l2mtu && dev->max_mtu > 0 && new_mtu > dev->max_mtu) {
 		NL_SET_ERR_MSG(extack, "mtu greater than device maximum");
 		return -EINVAL;
 	}
@@ -9556,7 +9920,7 @@ static void netdev_wait_allrefs(struct net_device *dev)
 			rebroadcast_time = jiffies;
 		}
 
-		msleep(250);
+		msleep(10);
 
 		refcnt = netdev_refcnt_read(dev);
 
@@ -9592,19 +9956,15 @@ static void netdev_wait_allrefs(struct net_device *dev)
  * We must not return until all unregister events added during
  * the interval the lock was held have been completed.
  */
-void netdev_run_todo(void)
-{
+
+static void __netdev_run_todo(void) {
 	struct list_head list;
+//	printk("netdev_run_todo_work: %ld\n", jiffies);
 
 	/* Snapshot list, allow later requests */
 	list_replace_init(&net_todo_list, &list);
 
 	__rtnl_unlock();
-
-
-	/* Wait for rcu callbacks to finish before next phase */
-	if (!list_empty(&list))
-		rcu_barrier();
 
 	while (!list_empty(&list)) {
 		struct net_device *dev
@@ -9645,6 +10005,33 @@ void netdev_run_todo(void)
 		/* Free network device */
 		kobject_put(&dev->dev.kobj);
 	}
+}
+
+static void netdev_run_todo_work(struct work_struct *w) {
+	rtnl_lock();
+	__netdev_run_todo();
+}
+
+static struct work_struct run_todo_work;
+
+void netdev_run_todo(void)
+{
+	struct net_device *dev;
+
+	if (list_empty(&net_todo_list)) {
+		__rtnl_unlock();
+		return;
+	}
+
+	list_for_each_entry(dev, &net_todo_list, todo_list) {
+	    if (dev->priv_destructor != free_netdev) {
+		__netdev_run_todo();
+		return;
+	    }
+	}
+
+	schedule_work(&run_todo_work);
+	__rtnl_unlock();
 }
 
 /* Convert net_device_stats to rtnl_link_stats64. rtnl_link_stats64 has
@@ -10464,6 +10851,8 @@ static int __init net_dev_init(void)
 	int i, rc = -ENOMEM;
 
 	BUG_ON(!dev_boot_phase);
+
+	INIT_WORK(&run_todo_work, netdev_run_todo_work);
 
 	if (dev_proc_init())
 		goto out;

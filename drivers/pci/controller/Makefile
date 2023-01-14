@@ -27,11 +27,17 @@ obj-$(CONFIG_PCIE_ROCKCHIP_HOST) += pcie-rockchip-host.o
 obj-$(CONFIG_PCIE_MEDIATEK) += pcie-mediatek.o
 obj-$(CONFIG_PCIE_MOBIVEIL) += pcie-mobiveil.o
 obj-$(CONFIG_PCIE_TANGO_SMP8759) += pcie-tango.o
+ifdef CONFIG_ARM64
+obj-$(CONFIG_ARCH_ALPINE) += pci-internal-alpine.o
+obj-$(CONFIG_ARCH_ALPINE) += pci-external-alpine.o
+obj-$(CONFIG_ARCH_ALPINE) += pci-external-err-alpine.o
+endif
 obj-$(CONFIG_VMD) += vmd.o
 obj-$(CONFIG_PCIE_BRCMSTB) += pcie-brcmstb.o
 # pcie-hisi.o quirks are needed even without CONFIG_PCIE_DW
 obj-y				+= dwc/
 
+include $(srctree)/drivers/soc/alpine/alpine_hal.mk
 
 # The following drivers are for devices that use the generic ACPI
 # pci_root.c driver but don't support standard ECAM config access.

@@ -28,6 +28,15 @@
 
 #include <asm/local.h>
 
+#ifdef __tile__
+#define RB_FORCE_8BYTE_ALIGNMENT	1
+#define RB_ARCH_ALIGNMENT		8
+#else
+#define RB_FORCE_8BYTE_ALIGNMENT	0
+#define RB_ARCH_ALIGNMENT		RB_ALIGNMENT
+#endif
+
+
 static void update_pages_handler(struct work_struct *work);
 
 /*
@@ -2364,7 +2373,7 @@ rb_update_event(struct ring_buffer_per_cpu *cpu_buffer,
 
 	event->time_delta = delta;
 	length -= RB_EVNT_HDR_SIZE;
-	if (length > RB_MAX_SMALL_DATA) {
+	if (length > RB_MAX_SMALL_DATA || RB_FORCE_8BYTE_ALIGNMENT) {
 		event->type_len = 0;
 		event->array[0] = length;
 	} else
@@ -2379,11 +2388,11 @@ static unsigned rb_calculate_event_length(unsigned length)
 	if (!length)
 		length++;
 
-	if (length > RB_MAX_SMALL_DATA)
+	if (length > RB_MAX_SMALL_DATA || RB_FORCE_8BYTE_ALIGNMENT)
 		length += sizeof(event.array[0]);
 
 	length += RB_EVNT_HDR_SIZE;
-	length = ALIGN(length, RB_ALIGNMENT);
+	length = ALIGN(length, RB_ARCH_ALIGNMENT);
 
 	/*
 	 * In case the time delta is larger than the 27 bits for it
@@ -4904,6 +4913,19 @@ int trace_rb_cpu_prepare(unsigned int cpu, struct hlist_node *node)
 	cpumask_set_cpu(cpu, buffer->cpumask);
 	return 0;
 }
+
+#ifndef CORE_TRACING
+/* usually trace.c code inits this stuff, but if it isn't enabled, we
+   have to do it on our own */
+__init static int init_rb(void)
+{
+	cpuhp_setup_state_multi(CPUHP_TRACE_RB_PREPARE,
+				"trace/RB:preapre", trace_rb_cpu_prepare,
+				NULL);
+	return 0;
+}
+core_initcall(init_rb);
+#endif
 
 #ifdef CONFIG_RING_BUFFER_STARTUP_TEST
 /*

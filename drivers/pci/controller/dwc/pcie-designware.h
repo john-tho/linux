@@ -201,6 +201,11 @@ struct pcie_port {
 	u32			irq_mask[MAX_MSI_CTRLS];
 	struct pci_bus		*root_bus;
 	raw_spinlock_t		lock;
+	u32			msi_gicm_addr;
+	u32			msi_gicm_base;
+	void __iomem		*dm_iatu;
+	u32			is_gen3;
+	u32			is_dk;
 	DECLARE_BITMAP(msi_irq_in_use, MAX_MSI_IRQS);
 };
 

@@ -32,7 +32,7 @@ union pkthdr {
 	struct {
 		u8 type;
 	} igmphdr;
-};
+}  __attribute__((packed));
 
 static bool
 ebt_ip_mt(const struct sk_buff *skb, struct xt_action_param *par)

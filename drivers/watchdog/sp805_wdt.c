@@ -28,6 +28,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
+#include <linux/reboot.h>
 #include <linux/watchdog.h>
 
 /* default timeout in seconds */
@@ -144,6 +145,8 @@ wdt_restart(struct watchdog_device *wdd, unsigned long mode, void *cmd)
 	return 0;
 }
 
+static void noop(void *data) {
+}
 static int wdt_config(struct watchdog_device *wdd, bool ping)
 {
 	struct sp805_wdt *wdt = watchdog_get_drvdata(wdd);
@@ -158,6 +161,7 @@ static int wdt_config(struct watchdog_device *wdd, bool ping)
 		}
 	}
 
+	on_each_cpu(noop, NULL, 1);
 	spin_lock(&wdt->lock);
 
 	writel_relaxed(UNLOCK, wdt->base + WDTLOCK);
@@ -207,6 +211,28 @@ static int wdt_disable(struct watchdog_device *wdd)
 
 	return 0;
 }
+
+static struct watchdog_device *wdd0;
+
+static int wdt_restart_handle(struct notifier_block *this, unsigned long mode,
+			      void *cmd)
+{
+	struct sp805_wdt *wdt = watchdog_get_drvdata(wdd0);
+    
+	writel_relaxed(UNLOCK, wdt->base + WDTLOCK);
+	writel_relaxed(1, wdt->base + WDTLOAD);
+	writel_relaxed(INT_ENABLE | RESET_ENABLE, wdt->base + WDTCONTROL);
+
+	while (true)
+		;
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block wdt_restart_handler = {
+	.notifier_call = wdt_restart_handle,
+	.priority = 128,
+};
 
 static const struct watchdog_info wdt_info = {
 	.options = WDIOF_MAGICCLOSE | WDIOF_SETTIMEOUT | WDIOF_KEEPALIVEPING,
@@ -292,6 +318,11 @@ sp805_wdt_probe(struct amba_device *adev, const struct amba_id *id)
 		goto err;
 	amba_set_drvdata(adev, wdt);
 
+	if (!wdd0) {
+		wdd0 = &wdt->wdd;
+		register_restart_handler(&wdt_restart_handler);
+	}
+	
 	dev_info(&adev->dev, "registration successful\n");
 	return 0;
 
@@ -306,6 +337,10 @@ static int sp805_wdt_remove(struct amba_device *adev)
 
 	watchdog_unregister_device(&wdt->wdd);
 	watchdog_set_drvdata(&wdt->wdd, NULL);
+	if (wdd0 == &wdt->wdd) {
+		unregister_restart_handler(&wdt_restart_handler);
+		wdd0 = NULL;
+	}
 
 	return 0;
 }

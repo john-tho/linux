@@ -61,6 +61,7 @@
 #include <net/l3mdev.h>
 #include <net/ip.h>
 #include <linux/uaccess.h>
+#include <asm/unaligned.h>
 
 #ifdef CONFIG_SYSCTL
 #include <linux/sysctl.h>
@@ -431,8 +432,13 @@ void fib6_select_path(const struct net *net, struct fib6_result *res,
 	struct fib6_info *sibling, *next_sibling;
 	struct fib6_info *match = res->f6i;
 
-	if ((!match->fib6_nsiblings && !match->nh) || have_oif_match)
+	if ((!match->fib6_nsiblings && !match->nh) || have_oif_match) {
+		if (unlikely(match->nh)) {
+			res->nh = nexthop_fib6_nh(match->nh);
+			return;
+		}
 		goto out;
+	}
 
 	/* We might have already computed the hash for ICMPv6 errors. In such
 	 * case it will always be non-zero. Otherwise now is the time to do it.
@@ -3179,7 +3185,7 @@ static int ip6_dst_gc(struct dst_ops *ops)
 		goto out;
 
 	net->ipv6.ip6_rt_gc_expire++;
-	fib6_run_gc(net->ipv6.ip6_rt_gc_expire, net, true);
+	fib6_run_gc(net->ipv6.ip6_rt_gc_expire, net, false);
 	entries = dst_entries_get_slow(ops);
 	if (entries < ops->gc_thresh)
 		net->ipv6.ip6_rt_gc_expire = rt_gc_timeout>>1;
@@ -3472,7 +3478,7 @@ int fib6_nh_init(struct net *net, struct fib6_nh *fib6_nh,
 	}
 
 	if (!(cfg->fc_flags & (RTF_LOCAL | RTF_ANYCAST)) &&
-	    !netif_carrier_ok(dev))
+	    0 && !netif_carrier_ok(dev))
 		fib6_nh->fib_nh_flags |= RTNH_F_LINKDOWN;
 
 	err = fib_nh_common_init(&fib6_nh->nh_common, cfg->fc_encap,
@@ -5293,6 +5299,14 @@ static int ip6_route_multipath_del(struct fib6_config *cfg,
 	return last_err;
 }
 
+static int fib6_clean_static(struct fib6_info *rt, void *x)
+{
+	if (rt->fib6_protocol == RTPROT_STATIC) {
+		return -1;
+	}
+	return 0;
+}
+
 static int inet6_rtm_delroute(struct sk_buff *skb, struct nlmsghdr *nlh,
 			      struct netlink_ext_ack *extack)
 {
@@ -5302,6 +5316,11 @@ static int inet6_rtm_delroute(struct sk_buff *skb, struct nlmsghdr *nlh,
 	err = rtm_to_fib6_config(skb, nlh, &cfg, extack);
 	if (err < 0)
 		return err;
+
+	if (cfg.fc_dst_len == 253) {
+	        fib6_clean_all(sock_net(skb->sk), fib6_clean_static, NULL);
+		return 0;
+	}
 
 	if (cfg.fc_nh_id &&
 	    !nexthop_find_by_id(sock_net(skb->sk), cfg.fc_nh_id)) {
@@ -6232,6 +6251,11 @@ static int __net_init ip6_route_net_init(struct net *net)
 {
 	int ret = -ENOMEM;
 
+	struct sysinfo si;
+	unsigned long long max_size;
+	unsigned long long max_size_max;
+	unsigned long long max_size_min;
+
 	memcpy(&net->ipv6.ip6_dst_ops, &ip6_dst_ops_template,
 	       sizeof(net->ipv6.ip6_dst_ops));
 
@@ -6280,8 +6304,22 @@ static int __net_init ip6_route_net_init(struct net *net)
 #endif
 #endif
 
+	si_meminfo(&si);
+	max_size = si.totalram << (PAGE_SHIFT - 10);
+	max_size_max = roundup_pow_of_two(max_size);
+	max_size_min = max_size_max >> 1;
+	max_size = max_size_max - max_size > max_size - max_size_min ?
+			max_size_min : max_size_max;
+	if (max_size <= (512 * 1024))
+		max_size >>= 1;
+	if (max_size < (1024 * 1024))
+		max_size >>= 1;
+	if (max_size < (2048 * 1024))
+		max_size >>= 1;
+	max_size = min(max_size, 0x80000000ULL);
+
 	net->ipv6.sysctl.flush_delay = 0;
-	net->ipv6.sysctl.ip6_rt_max_size = 4096;
+	net->ipv6.sysctl.ip6_rt_max_size = max_size;
 	net->ipv6.sysctl.ip6_rt_gc_min_interval = HZ / 2;
 	net->ipv6.sysctl.ip6_rt_gc_timeout = 60*HZ;
 	net->ipv6.sysctl.ip6_rt_gc_interval = 30*HZ;

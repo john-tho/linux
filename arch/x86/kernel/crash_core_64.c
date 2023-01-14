@@ -20,5 +20,7 @@ void arch_crash_save_vmcoreinfo(void)
 #endif
 	vmcoreinfo_append_str("KERNELOFFSET=%lx\n", kaslr_offset());
 	VMCOREINFO_NUMBER(KERNEL_IMAGE_SIZE);
+	vmcoreinfo_append_str("__PAGE_OFFSET=%ld\n",
+			      (unsigned long)__PAGE_OFFSET);
 	VMCOREINFO_NUMBER(sme_mask);
 }

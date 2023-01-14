@@ -103,7 +103,7 @@ struct iphdr {
 	__be32	saddr;
 	__be32	daddr;
 	/*The options start here. */
-};
+} __attribute__((packed));
 
 
 struct ip_auth_hdr {
@@ -113,26 +113,26 @@ struct ip_auth_hdr {
 	__be32 spi;
 	__be32 seq_no;		/* Sequence number */
 	__u8  auth_data[0];	/* Variable len but >=4. Mind the 64 bit alignment! */
-};
+} __attribute__((packed));
 
 struct ip_esp_hdr {
 	__be32 spi;
 	__be32 seq_no;		/* Sequence number */
 	__u8  enc_data[0];	/* Variable len but >=8. Mind the 64 bit alignment! */
-};
+} __attribute__((packed));
 
 struct ip_comp_hdr {
 	__u8 nexthdr;
 	__u8 flags;
 	__be16 cpi;
-};
+} __attribute__((packed));
 
 struct ip_beet_phdr {
 	__u8 nexthdr;
 	__u8 hdrlen;
 	__u8 padlen;
 	__u8 reserved;
-};
+} __attribute__((packed));
 
 /* index values for the variables in ipv4_devconf */
 enum

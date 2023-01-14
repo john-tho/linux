@@ -266,7 +266,7 @@ ehci_urb_done(struct ehci_hcd *ehci, struct urb *urb, int status)
 
 #ifdef EHCI_URB_TRACE
 	ehci_dbg (ehci,
-		"%s %s urb %p ep%d%s status %d len %d/%d\n",
+		"%s %s urb %px ep%d%s status %d len %d/%d\n",
 		__func__, urb->dev->devpath, urb,
 		usb_pipeendpoint (urb->pipe),
 		usb_pipein (urb->pipe) ? "in" : "out",
@@ -1117,7 +1117,7 @@ submit_async (
 		struct ehci_qtd *qtd;
 		qtd = list_entry(qtd_list->next, struct ehci_qtd, qtd_list);
 		ehci_dbg(ehci,
-			 "%s %s urb %p ep%d%s len %d, qtd %p [qh %p]\n",
+			 "%s %s urb %px ep%d%s len %d, qtd %px [qh %px]\n",
 			 __func__, urb->dev->devpath, urb,
 			 epnum & 0x0f, (epnum & USB_DIR_IN) ? "in" : "out",
 			 urb->transfer_buffer_length,

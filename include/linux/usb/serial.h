@@ -239,6 +239,8 @@ struct usb_serial_driver {
 	const char *description;
 	const struct usb_device_id *id_table;
 
+	unsigned max_buf_size;
+
 	struct list_head	driver_list;
 	struct device_driver	driver;
 	struct usb_driver	*usb_driver;

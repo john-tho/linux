@@ -2638,8 +2638,11 @@ static int xfrm_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh,
 	const struct xfrm_link *link;
 	int type, err;
 
+#if 0
+// XXX - our exchange structures are fixed and compatible
 	if (in_compat_syscall())
 		return -EOPNOTSUPP;
+#endif
 
 	type = nlh->nlmsg_type;
 	if (type > XFRM_MSG_MAX)

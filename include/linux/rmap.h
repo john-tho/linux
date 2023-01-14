@@ -99,6 +99,10 @@ enum ttu_flags {
 	TTU_RMAP_LOCKED		= 0x80,	/* do not grab rmap lock:
 					 * caller holds it */
 	TTU_SPLIT_FREEZE	= 0x100,		/* freeze pte under splitting thp */
+#ifdef CONFIG_HOMECACHE
+	TTU_HOMECACHE_START	= 0x200,/* mark PTEs as homecache-migrating */
+	TTU_HOMECACHE_FINISH	= 0x400,/* restore PTEs with new values */
+#endif
 };
 
 #ifdef CONFIG_MMU

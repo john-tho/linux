@@ -15,6 +15,7 @@
 #include <linux/string.h>
 #include <linux/slab.h>
 #include <linux/aer.h>
+#include <linux/of.h>
 
 #include "../pci.h"
 #include "portdrv.h"
@@ -101,10 +102,16 @@ static int pcie_message_numbers(struct pci_dev *dev, int mask,
 static int pcie_port_enable_irq_vec(struct pci_dev *dev, int *irqs, int mask)
 {
 	int nr_entries, nvec, pcie_irq;
+	int nr_max_entries;
 	u32 pme = 0, aer = 0, dpc = 0;
 
 	/* Allocate the maximum possible number of MSI/MSI-X vectors */
-	nr_entries = pci_alloc_irq_vectors(dev, 1, PCIE_PORT_MAX_MSI_ENTRIES,
+	if (of_machine_is_compatible("qcom,ipq807x"))
+		nr_max_entries = 1;
+	else
+		nr_max_entries = PCIE_PORT_MAX_MSI_ENTRIES;
+
+	nr_entries = pci_alloc_irq_vectors(dev, 1, nr_max_entries,
 			PCI_IRQ_MSIX | PCI_IRQ_MSI);
 	if (nr_entries < 0)
 		return nr_entries;

@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
+subdir-ccflags-$(CONFIG_ARM) += -O2
+subdir-ccflags-$(CONFIG_ARM64) += -O2
+subdir-ccflags-$(CONFIG_TILE) += -O2
+
 netfilter-objs := core.o nf_log.o nf_queue.o nf_sockopt.o utils.o
 
 nf_conntrack-y	:= nf_conntrack_core.o nf_conntrack_standalone.o nf_conntrack_expect.o nf_conntrack_helper.o \

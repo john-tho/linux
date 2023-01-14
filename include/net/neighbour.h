@@ -273,8 +273,8 @@ static inline bool neigh_key_eq128(const struct neighbour *n, const void *pkey)
 	const u32 *n32 = (const u32 *)n->primary_key;
 	const u32 *p32 = pkey;
 
-	return ((n32[0] ^ p32[0]) | (n32[1] ^ p32[1]) |
-		(n32[2] ^ p32[2]) | (n32[3] ^ p32[3])) == 0;
+	return ((n32[0] ^ get_unaligned(&p32[0])) | (n32[1] ^ get_unaligned(&p32[1])) |
+		(n32[2] ^ get_unaligned(&p32[2])) | (n32[3] ^ get_unaligned(&p32[3]))) == 0;
 }
 
 static inline struct neighbour *___neigh_lookup_noref(

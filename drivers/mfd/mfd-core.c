@@ -166,6 +166,15 @@ static int mfd_add_device(struct device *parent, int id,
 
 	mfd_acpi_add_device(cell, pdev);
 
+	if (parent->of_node && cell->of_compatible) {
+		for_each_child_of_node(parent->of_node, np) {
+			if (of_device_is_compatible(np, cell->of_compatible)) {
+				pdev->dev.of_node = np;
+				break;
+			}
+		}
+	}
+
 	if (cell->pdata_size) {
 		ret = platform_device_add_data(pdev,
 					cell->platform_data, cell->pdata_size);

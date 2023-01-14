@@ -693,6 +693,8 @@ struct ethtool_test {
 	__u32	cmd;
 	__u32	flags;
 	__u32	reserved;
+	__u32	reserved2;
+	__u32	reserved3;
 	__u32	len;
 	__u64	data[0];
 };

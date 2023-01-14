@@ -300,6 +300,7 @@ struct bpf_sk_storage;
   *	@sk_ack_backlog: current listen backlog
   *	@sk_max_ack_backlog: listen backlog set in listen()
   *	@sk_uid: user id of owner
+  *	@sk_prefer_busy_poll: prefer busypolling over softirq processing
   *	@sk_priority: %SO_PRIORITY setting
   *	@sk_type: socket type (%SOCK_STREAM, etc)
   *	@sk_protocol: which protocol this socket belongs in this network family
@@ -478,6 +479,9 @@ struct sock {
 	u32			sk_ack_backlog;
 	u32			sk_max_ack_backlog;
 	kuid_t			sk_uid;
+#ifdef CONFIG_NET_RX_BUSY_POLL
+	u8			sk_prefer_busy_poll;
+#endif
 	struct pid		*sk_peer_pid;
 	const struct cred	*sk_peer_cred;
 	long			sk_rcvtimeo;
@@ -514,6 +518,8 @@ struct sock {
 							struct sk_buff *skb);
 #endif
 	void                    (*sk_destruct)(struct sock *sk);
+	int			(*sk_lockless_rcv)(struct sock *sk,
+						   struct sk_buff *skb);
 	struct sock_reuseport __rcu	*sk_reuseport_cb;
 #ifdef CONFIG_BPF_SYSCALL
 	struct bpf_sk_storage __rcu	*sk_bpf_storage;
@@ -2010,7 +2016,7 @@ static inline int skb_add_data_nocache(struct sock *sk, struct sk_buff *skb,
 {
 	int err, offset = skb->len;
 
-	err = skb_do_copy_data_nocache(sk, skb, from, skb_put(skb, copy),
+	err = skb_do_copy_data_nocache(sk, skb, from, (char *) skb_put(skb, copy),
 				       copy, offset);
 	if (err)
 		__skb_trim(skb, offset);

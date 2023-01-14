@@ -97,6 +97,7 @@ struct mpls_nh { /* next hop label forwarding entry */
 	u8			nh_via_alen;
 	u8			nh_via_table;
 	u8			nh_reserved1;
+	u32 			nh_limit;
 
 	u32			nh_label[0];
 };
@@ -154,6 +155,7 @@ struct mpls_route { /* next hop label forwarding entry */
 	u8			rt_nh_size;
 	u8			rt_via_offset;
 	u8			rt_reserved1;
+	struct net_device *	rt_pw;
 	struct mpls_nh		rt_nh[0];
 };
 
@@ -210,5 +212,37 @@ unsigned int mpls_dev_mtu(const struct net_device *dev);
 bool mpls_pkt_too_big(const struct sk_buff *skb, unsigned int mtu);
 void mpls_stats_inc_outucastpkts(struct net_device *dev,
 				 const struct sk_buff *skb);
+
+struct mpls_route *mpls_route_input_rcu(struct net *net, unsigned index);
+struct mpls_nh *mpls_select_multipath(struct mpls_route *rt,
+				     struct sk_buff *skb);
+
+#define MPLS_NEIGH_TABLE_UNSPEC (NEIGH_LINK_TABLE + 1)
+
+static inline unsigned int mpls_nh_header_size(const struct mpls_nh *nh)
+{
+	/* The size of the layer 2.5 labels to be added for this route */
+	return nh->nh_labels * sizeof(struct mpls_shim_hdr);
+}
+static inline u8 *__mpls_nh_via(struct mpls_route *rt, struct mpls_nh *nh)
+{
+	return (u8 *)nh + rt->rt_via_offset;
+}
+
+static inline const u8 *mpls_nh_via(const struct mpls_route *rt,
+			     const struct mpls_nh *nh)
+{
+	return __mpls_nh_via((struct mpls_route *)rt, (struct mpls_nh *)nh);
+}
+
+void mpls_pw_set_label(struct net_device *, u32 label);
+int mpls_pw_recv(struct mpls_route *, struct sk_buff *);
+int is_mpls_pw(struct net_device *);
+int mpls_pw_init(void);
+void mpls_pw_exit(void);
+
+int mpls_limit_query(u32, struct sk_buff *);
+void mpls_limit_init(void);
+void mpls_limit_exit(void);
 
 #endif /* MPLS_INTERNAL_H */

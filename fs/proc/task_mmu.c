@@ -1859,6 +1859,11 @@ static int show_numa_map(struct seq_file *m, void *v)
 	if (!md->pages)
 		goto out;
 
+#ifdef CONFIG_HOMECACHE
+        if (vma->vm_pid)
+                seq_printf(m, " pid=%d", (int) vma->vm_pid);
+#endif
+
 	if (md->anon)
 		seq_printf(m, " anon=%lu", md->anon);
 

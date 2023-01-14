@@ -116,6 +116,7 @@ typedef struct ifslave {
 	char slave_name[IFNAMSIZ];
 	__s8 link;
 	__s8 state;
+	__s8 inactive;
 	__u32  link_failure_count;
 } ifslave;
 
